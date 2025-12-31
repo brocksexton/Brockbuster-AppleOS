@@ -42,6 +42,10 @@ struct BrockbusterTheme {
             return .system(.largeTitle, design: .rounded).bold()
             #endif
         }
+        
+        static var caption: Font {
+            .system(size: 13, weight: .regular, design: .rounded)
+        }
 
         /// Title font for section headers
         static var title: Font {

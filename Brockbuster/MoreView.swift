@@ -5,18 +5,29 @@ import SwiftUI
 /// row navigates to a placeholder view for future features (Friends, Server
 /// Health, Social, Settings).  Additional entries can be added as new features
 /// are developed.
+import SwiftUI
+
 struct MoreView: View {
+    @EnvironmentObject private var session: SessionStore
+
     var body: some View {
         List {
-            NavigationLink(destination: FriendsTab()) {
+            NavigationLink(destination: FriendsView()) {
                 Label("Friends", systemImage: "person.2.fill")
             }
+
+            NavigationLink(destination: PeopleView()) {
+                Label("People", systemImage: "person.crop.square")
+            }
+
             NavigationLink(destination: ServerHealthTab()) {
                 Label("Server Health", systemImage: "waveform.path.ecg")
             }
+
             NavigationLink(destination: SocialTab()) {
                 Label("Social Feed", systemImage: "quote.bubble.fill")
             }
+
             NavigationLink(destination: SettingsTab()) {
                 Label("Settings", systemImage: "gearshape.fill")
             }

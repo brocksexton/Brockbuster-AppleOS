@@ -21,12 +21,29 @@
 			remoteGlobalIDString = C1C874662F04A3C200ECEC07;
 			remoteInfo = Brockbuster;
 		};
+		C1C874A32F04A4C000ECEC07 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C1C8745F2F04A3C200ECEC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C1C874952F04A4BD00ECEC07;
+			remoteInfo = "Brockbuster-tvOS";
+		};
+		C1C874AD2F04A4C000ECEC07 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C1C8745F2F04A3C200ECEC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C1C874952F04A4BD00ECEC07;
+			remoteInfo = "Brockbuster-tvOS";
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		C1C874672F04A3C200ECEC07 /* Brockbuster.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Brockbuster.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1C874752F04A3C400ECEC07 /* BrockbusterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BrockbusterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1C8747F2F04A3C400ECEC07 /* BrockbusterUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BrockbusterUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C1C874962F04A4BD00ECEC07 /* Brockbuster-tvOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Brockbuster-tvOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C1C874A22F04A4C000ECEC07 /* Brockbuster-tvOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Brockbuster-tvOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C1C874AC2F04A4C000ECEC07 /* Brockbuster-tvOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Brockbuster-tvOSUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -43,6 +60,21 @@
 		C1C874822F04A3C400ECEC07 /* BrockbusterUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = BrockbusterUITests;
+			sourceTree = "<group>";
+		};
+		C1C874972F04A4BD00ECEC07 /* Brockbuster-tvOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Brockbuster-tvOS";
+			sourceTree = "<group>";
+		};
+		C1C874A52F04A4C000ECEC07 /* Brockbuster-tvOSTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Brockbuster-tvOSTests";
+			sourceTree = "<group>";
+		};
+		C1C874AF2F04A4C000ECEC07 /* Brockbuster-tvOSUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Brockbuster-tvOSUITests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -69,6 +101,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C1C874932F04A4BD00ECEC07 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1C8749F2F04A4C000ECEC07 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1C874A92F04A4C000ECEC07 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -78,6 +131,9 @@
 				C1C874692F04A3C200ECEC07 /* Brockbuster */,
 				C1C874782F04A3C400ECEC07 /* BrockbusterTests */,
 				C1C874822F04A3C400ECEC07 /* BrockbusterUITests */,
+				C1C874972F04A4BD00ECEC07 /* Brockbuster-tvOS */,
+				C1C874A52F04A4C000ECEC07 /* Brockbuster-tvOSTests */,
+				C1C874AF2F04A4C000ECEC07 /* Brockbuster-tvOSUITests */,
 				C1C874682F04A3C200ECEC07 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -88,6 +144,9 @@
 				C1C874672F04A3C200ECEC07 /* Brockbuster.app */,
 				C1C874752F04A3C400ECEC07 /* BrockbusterTests.xctest */,
 				C1C8747F2F04A3C400ECEC07 /* BrockbusterUITests.xctest */,
+				C1C874962F04A4BD00ECEC07 /* Brockbuster-tvOS.app */,
+				C1C874A22F04A4C000ECEC07 /* Brockbuster-tvOSTests.xctest */,
+				C1C874AC2F04A4C000ECEC07 /* Brockbuster-tvOSUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -163,6 +222,74 @@
 			productReference = C1C8747F2F04A3C400ECEC07 /* BrockbusterUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		C1C874952F04A4BD00ECEC07 /* Brockbuster-tvOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C1C874B42F04A4C000ECEC07 /* Build configuration list for PBXNativeTarget "Brockbuster-tvOS" */;
+			buildPhases = (
+				C1C874922F04A4BD00ECEC07 /* Sources */,
+				C1C874932F04A4BD00ECEC07 /* Frameworks */,
+				C1C874942F04A4BD00ECEC07 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C1C874972F04A4BD00ECEC07 /* Brockbuster-tvOS */,
+			);
+			name = "Brockbuster-tvOS";
+			packageProductDependencies = (
+			);
+			productName = "Brockbuster-tvOS";
+			productReference = C1C874962F04A4BD00ECEC07 /* Brockbuster-tvOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C1C874A12F04A4C000ECEC07 /* Brockbuster-tvOSTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C1C874B72F04A4C000ECEC07 /* Build configuration list for PBXNativeTarget "Brockbuster-tvOSTests" */;
+			buildPhases = (
+				C1C8749E2F04A4C000ECEC07 /* Sources */,
+				C1C8749F2F04A4C000ECEC07 /* Frameworks */,
+				C1C874A02F04A4C000ECEC07 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C1C874A42F04A4C000ECEC07 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C1C874A52F04A4C000ECEC07 /* Brockbuster-tvOSTests */,
+			);
+			name = "Brockbuster-tvOSTests";
+			packageProductDependencies = (
+			);
+			productName = "Brockbuster-tvOSTests";
+			productReference = C1C874A22F04A4C000ECEC07 /* Brockbuster-tvOSTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		C1C874AB2F04A4C000ECEC07 /* Brockbuster-tvOSUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C1C874BA2F04A4C000ECEC07 /* Build configuration list for PBXNativeTarget "Brockbuster-tvOSUITests" */;
+			buildPhases = (
+				C1C874A82F04A4C000ECEC07 /* Sources */,
+				C1C874A92F04A4C000ECEC07 /* Frameworks */,
+				C1C874AA2F04A4C000ECEC07 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C1C874AE2F04A4C000ECEC07 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C1C874AF2F04A4C000ECEC07 /* Brockbuster-tvOSUITests */,
+			);
+			name = "Brockbuster-tvOSUITests";
+			packageProductDependencies = (
+			);
+			productName = "Brockbuster-tvOSUITests";
+			productReference = C1C874AC2F04A4C000ECEC07 /* Brockbuster-tvOSUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -171,7 +298,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1640;
-				LastUpgradeCheck = 1640;
+				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					C1C874662F04A3C200ECEC07 = {
 						CreatedOnToolsVersion = 16.4;
@@ -183,6 +310,17 @@
 					C1C8747E2F04A3C400ECEC07 = {
 						CreatedOnToolsVersion = 16.4;
 						TestTargetID = C1C874662F04A3C200ECEC07;
+					};
+					C1C874952F04A4BD00ECEC07 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					C1C874A12F04A4C000ECEC07 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = C1C874952F04A4BD00ECEC07;
+					};
+					C1C874AB2F04A4C000ECEC07 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = C1C874952F04A4BD00ECEC07;
 					};
 				};
 			};
@@ -203,6 +341,9 @@
 				C1C874662F04A3C200ECEC07 /* Brockbuster */,
 				C1C874742F04A3C400ECEC07 /* BrockbusterTests */,
 				C1C8747E2F04A3C400ECEC07 /* BrockbusterUITests */,
+				C1C874952F04A4BD00ECEC07 /* Brockbuster-tvOS */,
+				C1C874A12F04A4C000ECEC07 /* Brockbuster-tvOSTests */,
+				C1C874AB2F04A4C000ECEC07 /* Brockbuster-tvOSUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -223,6 +364,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C1C8747D2F04A3C400ECEC07 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1C874942F04A4BD00ECEC07 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1C874A02F04A4C000ECEC07 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1C874AA2F04A4C000ECEC07 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -253,6 +415,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C1C874922F04A4BD00ECEC07 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1C8749E2F04A4C000ECEC07 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1C874A82F04A4C000ECEC07 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -265,6 +448,16 @@
 			isa = PBXTargetDependency;
 			target = C1C874662F04A3C200ECEC07 /* Brockbuster */;
 			targetProxy = C1C874802F04A3C400ECEC07 /* PBXContainerItemProxy */;
+		};
+		C1C874A42F04A4C000ECEC07 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C1C874952F04A4BD00ECEC07 /* Brockbuster-tvOS */;
+			targetProxy = C1C874A32F04A4C000ECEC07 /* PBXContainerItemProxy */;
+		};
+		C1C874AE2F04A4C000ECEC07 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C1C874952F04A4BD00ECEC07 /* Brockbuster-tvOS */;
+			targetProxy = C1C874AD2F04A4C000ECEC07 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -303,6 +496,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 72SP356B46;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -326,6 +520,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -365,6 +560,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 72SP356B46;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -381,6 +577,7 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
@@ -393,10 +590,15 @@
 				CODE_SIGN_ENTITLEMENTS = Brockbuster/Brockbuster.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 72SP356B46;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Brockbuster;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -412,14 +614,16 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = lol.Brockbuster;
+				PRODUCT_BUNDLE_IDENTIFIER = brock.Brockbuster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2,3";
+				TVOS_DEPLOYMENT_TARGET = 18.0;
 				XROS_DEPLOYMENT_TARGET = 2.5;
 			};
 			name = Debug;
@@ -432,10 +636,15 @@
 				CODE_SIGN_ENTITLEMENTS = Brockbuster/Brockbuster.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 72SP356B46;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Brockbuster;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -451,14 +660,16 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = lol.Brockbuster;
+				PRODUCT_BUNDLE_IDENTIFIER = brock.Brockbuster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2,3";
+				TVOS_DEPLOYMENT_TARGET = 18.0;
 				XROS_DEPLOYMENT_TARGET = 2.5;
 			};
 			name = Release;
@@ -469,6 +680,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 72SP356B46;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
@@ -492,6 +704,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 72SP356B46;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
@@ -514,6 +727,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 72SP356B46;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
@@ -536,6 +750,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 72SP356B46;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
@@ -550,6 +765,141 @@
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				TEST_TARGET_NAME = Brockbuster;
 				XROS_DEPLOYMENT_TARGET = 2.5;
+			};
+			name = Release;
+		};
+		C1C874B52F04A4C000ECEC07 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72SP356B46;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "lol.Brockbuster-tvOS";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 18.5;
+			};
+			name = Debug;
+		};
+		C1C874B62F04A4C000ECEC07 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72SP356B46;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "lol.Brockbuster-tvOS";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 18.5;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C1C874B82F04A4C000ECEC07 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72SP356B46;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "lol.Brockbuster-tvOSTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Brockbuster-tvOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Brockbuster-tvOS";
+				TVOS_DEPLOYMENT_TARGET = 18.5;
+			};
+			name = Debug;
+		};
+		C1C874B92F04A4C000ECEC07 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72SP356B46;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "lol.Brockbuster-tvOSTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Brockbuster-tvOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Brockbuster-tvOS";
+				TVOS_DEPLOYMENT_TARGET = 18.5;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C1C874BB2F04A4C000ECEC07 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72SP356B46;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "lol.Brockbuster-tvOSUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_TARGET_NAME = "Brockbuster-tvOS";
+				TVOS_DEPLOYMENT_TARGET = 18.5;
+			};
+			name = Debug;
+		};
+		C1C874BC2F04A4C000ECEC07 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72SP356B46;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "lol.Brockbuster-tvOSUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_TARGET_NAME = "Brockbuster-tvOS";
+				TVOS_DEPLOYMENT_TARGET = 18.5;
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -588,6 +938,33 @@
 			buildConfigurations = (
 				C1C874902F04A3C400ECEC07 /* Debug */,
 				C1C874912F04A3C400ECEC07 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C1C874B42F04A4C000ECEC07 /* Build configuration list for PBXNativeTarget "Brockbuster-tvOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C1C874B52F04A4C000ECEC07 /* Debug */,
+				C1C874B62F04A4C000ECEC07 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C1C874B72F04A4C000ECEC07 /* Build configuration list for PBXNativeTarget "Brockbuster-tvOSTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C1C874B82F04A4C000ECEC07 /* Debug */,
+				C1C874B92F04A4C000ECEC07 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C1C874BA2F04A4C000ECEC07 /* Build configuration list for PBXNativeTarget "Brockbuster-tvOSUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C1C874BB2F04A4C000ECEC07 /* Debug */,
+				C1C874BC2F04A4C000ECEC07 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

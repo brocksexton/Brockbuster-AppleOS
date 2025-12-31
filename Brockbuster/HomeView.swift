@@ -11,6 +11,7 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var session: SessionStore
     @StateObject private var model = HomeFeedViewModel()
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
@@ -93,14 +94,29 @@ struct HomeView: View {
     // MARK: - Subviews
 
     private var background: some View {
-        LinearGradient(
-            gradient: Gradient(colors: [
-                BrockbusterTheme.brockDark.opacity(0.6),
-                BrockbusterTheme.brockBlue.opacity(0.6)
-            ]),
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        Group {
+            if colorScheme == .dark {
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        BrockbusterTheme.brockDark.opacity(0.62),
+                        BrockbusterTheme.brockBlue.opacity(0.62)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            } else {
+                // Softer, less "muddy" light-mode treatment.
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(.systemBackground),
+                        BrockbusterTheme.brockBlue.opacity(0.14),
+                        BrockbusterTheme.brockGold.opacity(0.10)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        }
         .ignoresSafeArea()
     }
 
@@ -135,11 +151,14 @@ struct HomeView: View {
                 if let user = session.currentUser {
                     Text("Welcome, \(user.name)")
                         .font(BrockbusterTheme.Fonts.title)
-                        .foregroundColor(BrockbusterTheme.brockLight)
+                        .foregroundColor(colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark)
                 }
                 Text(model.slogan)
                     .font(BrockbusterTheme.Fonts.body)
-                    .foregroundColor(BrockbusterTheme.brockLight.opacity(0.82))
+                    .foregroundColor(
+                        (colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark)
+                            .opacity(0.82)
+                    )
             }
 
             Spacer(minLength: 0)
@@ -287,6 +306,8 @@ private struct LibraryChip: View {
     let title: String
     let imageURL: URL?
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         HStack(spacing: 10) {
             ZStack {
@@ -318,7 +339,7 @@ private struct LibraryChip: View {
 
             Text(title)
                 .font(BrockbusterTheme.Fonts.body.weight(.semibold))
-                .foregroundColor(BrockbusterTheme.brockLight)
+                .foregroundColor(colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark)
                 .lineLimit(1)
 
             Image(systemName: "chevron.right")
@@ -342,11 +363,13 @@ private struct HomeSection<Content: View>: View {
     let title: String
     @ViewBuilder var content: () -> Content
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(BrockbusterTheme.Fonts.title)
-                .foregroundColor(BrockbusterTheme.brockLight)
+                .foregroundColor(colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark)
             content()
         }
         .padding(.top, 6)
@@ -376,6 +399,27 @@ private struct HomeRail: View {
 private struct HomePosterCard: View {
     @EnvironmentObject private var session: SessionStore
     let item: JellyfinClient.LibraryItem
+
+    private var isEpisode: Bool {
+        (item.type ?? "").lowercased() == "episode"
+    }
+
+    private var primaryTitle: String {
+        if isEpisode {
+            return item.seriesName ?? item.name
+        }
+        return item.name
+    }
+
+    private var secondaryTitle: String? {
+        guard isEpisode else { return nil }
+        var parts: [String] = []
+        if let s = item.parentIndexNumber, s > 0 { parts.append("S\(s)") }
+        if let e = item.indexNumber, e > 0 { parts.append("E\(e)") }
+        let se = parts.joined()
+        if se.isEmpty { return item.name }
+        return "\(se) • \(item.name)"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -408,10 +452,17 @@ private struct HomePosterCard: View {
                 )
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name)
+                    Text(primaryTitle)
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.white)
-                        .lineLimit(2)
+                        .lineLimit(1)
+
+                    if let sub = secondaryTitle {
+                        Text(sub)
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.88))
+                            .lineLimit(1)
+                    }
                     if let ud = item.userData,
                        let pos = ud.playbackPositionTicks,
                        pos > 0,

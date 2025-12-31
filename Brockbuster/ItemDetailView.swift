@@ -18,54 +18,88 @@ struct ItemDetailView: View {
     @State private var playbackSubtitle: String = ""
     // State for presenting the video player (sheet is driven by a non-nil URL to avoid blank/white sheets)
     @State private var playerSheet: PresentedPlayerURL?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
-            // Background gradient
-            LinearGradient(gradient: Gradient(colors: [BrockbusterTheme.brockDark.opacity(0.8), BrockbusterTheme.brockBlue.opacity(0.8)]), startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea()
+            // Background (make light mode cleaner)
+            Group {
+                if colorScheme == .dark {
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            BrockbusterTheme.brockDark.opacity(0.82),
+                            BrockbusterTheme.brockBlue.opacity(0.82)
+                        ]),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                } else {
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            Color(.systemBackground),
+                            BrockbusterTheme.brockBlue.opacity(0.14),
+                            BrockbusterTheme.brockGold.opacity(0.10)
+                        ]),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+            }
+            .ignoresSafeArea()
+
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(spacing: 0) {
                     if let detail = detail {
-                        // Poster image
-                        if let url = session.itemImageURL(for: detail, maxWidth: 800) {
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case .empty:
-                                    Rectangle()
-                                        .fill(BrockbusterTheme.brockDark.opacity(0.3))
-                                        .frame(height: 300)
-                                        .cornerRadius(16)
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(height: 300)
-                                        .clipped()
-                                        .cornerRadius(16)
-                                case .failure:
-                                    Rectangle()
-                                        .fill(BrockbusterTheme.brockDark.opacity(0.3))
-                                        .frame(height: 300)
-                                        .overlay(Image(systemName: "film.fill").foregroundColor(BrockbusterTheme.brockGold))
-                                        .cornerRadius(16)
-                                @unknown default:
-                                    EmptyView()
+                        // HERO (edge-to-edge) — avoids weird clipping on iPhone while keeping content padded.
+                        ZStack {
+                            if let url = session.itemImageURL(for: detail, maxWidth: 1200) {
+                                AsyncImage(url: url) { phase in
+                                    switch phase {
+                                    case .empty:
+                                        Rectangle().fill(.black.opacity(0.18))
+                                    case .success(let image):
+                                        image
+                                            .resizable()
+                                            .scaledToFill()
+                                    case .failure:
+                                        Rectangle()
+                                            .fill(.black.opacity(0.18))
+                                            .overlay(Image(systemName: "film.fill").foregroundColor(BrockbusterTheme.brockGold))
+                                    @unknown default:
+                                        Rectangle().fill(.black.opacity(0.18))
+                                    }
                                 }
+                            } else {
+                                Rectangle()
+                                    .fill(.black.opacity(0.18))
+                                    .overlay(Image(systemName: "film.fill").foregroundColor(BrockbusterTheme.brockGold))
                             }
+
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.black.opacity(0.0), Color.black.opacity(0.65)]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         }
-                        // Title
-                        Text(detail.name)
-                            .font(BrockbusterTheme.Fonts.largeTitle)
-                            .foregroundColor(BrockbusterTheme.brockLight)
-                        if let tagline = detail.taglines?.first, !tagline.isEmpty {
-                            Text(tagline)
-                                .font(.title3.weight(.semibold))
-                                .foregroundColor(BrockbusterTheme.brockLight.opacity(0.9))
-                                .padding(.top, -10)
-                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 260)
+                        .clipped()
+
+                        // CONTENT (padded)
+                        VStack(alignment: .leading, spacing: 18) {
+                            Text(detail.name)
+                                .font(BrockbusterTheme.Fonts.largeTitle)
+                                .foregroundColor(colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.85)
+                            if let tagline = detail.taglines?.first, !tagline.isEmpty {
+                                Text(tagline)
+                                    .font(.title3.weight(.semibold))
+                                    .foregroundColor((colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark).opacity(0.85))
+                            }
                         // Info chips (year, runtime, rating)
-                        HStack(spacing: 12) {
+                            HStack(spacing: 12) {
                             if let year = detail.productionYear {
                                 InfoChip(text: String(year))
                             }
@@ -75,32 +109,32 @@ struct ItemDetailView: View {
                             if let rating = detail.communityRating {
                                 InfoChip(text: String(format: "%.1f ★", rating))
                             }
-                        }
+                            }
                         // Genres
-                        if let genres = detail.genres, !genres.isEmpty {
-                            Text(genres.joined(separator: ", "))
-                                .font(BrockbusterTheme.Fonts.body)
-                                .foregroundColor(BrockbusterTheme.brockLight.opacity(0.8))
-                        }
+                            if let genres = detail.genres, !genres.isEmpty {
+                                Text(genres.joined(separator: ", "))
+                                    .font(BrockbusterTheme.Fonts.body)
+                                    .foregroundColor((colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark).opacity(0.75))
+                            }
                         // Overview
-                        if let overview = detail.overview {
-                            Text(overview)
-                                .font(BrockbusterTheme.Fonts.body)
-                                .foregroundColor(BrockbusterTheme.brockLight.opacity(0.9))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                            if let overview = detail.overview {
+                                Text(overview)
+                                    .font(BrockbusterTheme.Fonts.body)
+                                    .foregroundColor((colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark).opacity(0.85))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
 // Cast
-let cast = people.filter { ($0.type ?? "").lowercased().contains("actor") || ($0.role ?? "").isEmpty == false }
-if !cast.isEmpty {
-    VStack(alignment: .leading, spacing: 10) {
-        Text("Cast")
-            .font(.headline)
-            .foregroundColor(BrockbusterTheme.brockLight)
+                            let cast = people.filter { ($0.type ?? "").lowercased().contains("actor") || ($0.role ?? "").isEmpty == false }
+                            if !cast.isEmpty {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("Cast")
+                                        .font(.headline)
+                                        .foregroundColor(colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark)
 
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 14) {
-                ForEach(cast.prefix(24)) { person in
-                    VStack(spacing: 8) {
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 14) {
+                                            ForEach(cast.prefix(24)) { person in
+                                                VStack(spacing: 8) {
                         ZStack {
                             if let url = session.personImageURL(for: person, maxWidth: 240) {
                                 AsyncImage(url: url) { phase in
@@ -125,28 +159,28 @@ if !cast.isEmpty {
                         .clipShape(Circle())
                         .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
 
-                        Text(person.name)
-                            .font(.caption.weight(.semibold))
-                            .foregroundColor(BrockbusterTheme.brockLight)
-                            .lineLimit(1)
+                                                    Text(person.name)
+                                                        .font(.caption.weight(.semibold))
+                                                        .foregroundColor(colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark)
+                                                        .lineLimit(1)
 
-                        if let role = person.role, !role.isEmpty {
-                            Text(role)
-                                .font(.caption2)
-                                .foregroundColor(BrockbusterTheme.brockLight.opacity(0.75))
-                                .lineLimit(1)
-                        }
-                    }
-                    .frame(width: 92)
-                }
-            }
-            .padding(.vertical, 2)
-        }
-    }
-}
+                                                    if let role = person.role, !role.isEmpty {
+                                                        Text(role)
+                                                            .font(.caption2)
+                                                            .foregroundColor((colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark).opacity(0.70))
+                                                            .lineLimit(1)
+                                                    }
+                                                }
+                                                .frame(width: 92)
+                                            }
+                                        }
+                                        .padding(.vertical, 2)
+                                    }
+                                }
+                            }
 
                         // Play button
-                        Button(action: playItem) {
+                            Button(action: playItem) {
                             HStack {
                                 Image(systemName: "play.circle.fill")
                                     .font(.title2)
@@ -158,14 +192,19 @@ if !cast.isEmpty {
                             .foregroundColor(BrockbusterTheme.brockDark)
                             .background(BrockbusterTheme.brockGold)
                             .cornerRadius(12)
+                            }
+                            .padding(.top, 10)
                         }
+                        .padding(.horizontal, 16)
                         .padding(.top, 16)
+                        .padding(.bottom, 28)
+
                     } else if isLoading {
                         VStack(spacing: 16) {
                             ProgressView("Loading…")
                                 .progressViewStyle(CircularProgressViewStyle(tint: BrockbusterTheme.brockGold))
                             Text("Fetching details…")
-                                .foregroundColor(BrockbusterTheme.brockLight)
+                                .foregroundColor(colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark)
                         }
                         .frame(maxWidth: .infinity, minHeight: 400)
                     } else if let errorMessage = errorMessage {
@@ -179,7 +218,6 @@ if !cast.isEmpty {
                         .frame(maxWidth: .infinity, minHeight: 400)
                     }
                 }
-                .padding()
             }
         }
         .navigationTitle(detail?.name ?? item.name)

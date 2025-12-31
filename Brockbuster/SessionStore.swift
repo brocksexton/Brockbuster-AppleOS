@@ -277,6 +277,53 @@ final class SessionStore: ObservableObject {
         return allItems
     }
 
+    /// Fetch a single page of items for a given parent (library or item) without caching.
+    /// This is intended for lightweight home-screen sections like "Recently Added".
+    func fetchItemsPage(
+        parentId: String,
+        includeItemTypes: [String]? = nil,
+        sortBy: [String]? = nil,
+        sortOrder: String? = nil,
+        limit: Int = 24,
+        recursive: Bool = true
+    ) async throws -> [JellyfinClient.LibraryItem] {
+        guard let userId = currentUser?.id else { return [] }
+        return try await withCheckedThrowingContinuation { continuation in
+            client.fetchItems(
+                for: parentId,
+                userId: userId,
+                startIndex: 0,
+                limit: limit,
+                recursive: recursive,
+                includeItemTypes: includeItemTypes,
+                sortBy: sortBy,
+                sortOrder: sortOrder
+            ) { result in
+                switch result {
+                case .success(let items):
+                    continuation.resume(returning: items)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Fetch Jellyfin "Continue Watching" (resume) items for the current user.
+    func fetchResumeItems(limit: Int = 24) async throws -> [JellyfinClient.LibraryItem] {
+        guard let userId = currentUser?.id else { return [] }
+        return try await withCheckedThrowingContinuation { continuation in
+            client.fetchResumeItems(userId: userId, limit: limit) { result in
+                switch result {
+                case .success(let items):
+                    continuation.resume(returning: items)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Fetch the child items of a given library item (e.g. seasons of a series,
     /// episodes of a season, or contents of a collection).  Uses the same
     /// underlying API as `fetchItems(for: LibraryView)`.  Does not cache by

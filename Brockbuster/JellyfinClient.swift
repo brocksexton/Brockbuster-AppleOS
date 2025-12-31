@@ -348,6 +348,59 @@ final class JellyfinClient {
         task.resume()
     }
 
+    /// Fetch the current user's resume/continue-watching items.
+    /// This uses Jellyfin's `/Users/{userId}/Items/Resume` endpoint.
+    func fetchResumeItems(
+        userId: String,
+        limit: Int = 20,
+        completion: @escaping (Result<[LibraryItem], Error>) -> Void
+    ) {
+        var components = URLComponents(url: baseURL.appendingPathComponent("Users/\(userId)/Items/Resume"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "Limit", value: String(limit)),
+            URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,Overview,CommunityRating,ProductionYear,RunTimeTicks,ParentId,ImageTags,BackdropImageTags,ParentIndexNumber,IndexNumber,SortName,PremiereDate,UserData,SeriesId,SeasonId,SeriesName"),
+            URLQueryItem(name: "EnableImageTypes", value: "Primary,Backdrop,Thumb"),
+            URLQueryItem(name: "ImageTypeLimit", value: "1")
+        ]
+        guard let url = components.url else {
+            DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(buildAuthorizationHeader(withToken: accessToken), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue("Brockbuster/\(appVersion) (SwiftUI; Darwin)", forHTTPHeaderField: "User-Agent")
+
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
+            guard let http = response as? HTTPURLResponse else {
+                DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
+                return
+            }
+            guard (200...299).contains(http.statusCode) else {
+                DispatchQueue.main.async { completion(.failure(NetworkError.httpStatus(code: http.statusCode))) }
+                return
+            }
+            guard let data = data else {
+                DispatchQueue.main.async { completion(.failure(NetworkError.emptyResponse)) }
+                return
+            }
+            do {
+                let wrapper = try JSONDecoder().decode(ItemsResponse.self, from: data)
+                DispatchQueue.main.async { completion(.success(wrapper.items)) }
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+            }
+        }
+        task.resume()
+    }
+
     // MARK: - Response structs
 
     private struct ViewsResponse: Decodable {

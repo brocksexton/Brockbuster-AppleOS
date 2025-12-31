@@ -13,6 +13,10 @@ struct SeriesDetailView: View {
     @State private var selectedSeason: JellyfinClient.LibraryItem?
     @State private var episodes: [JellyfinClient.LibraryItem] = []
 
+    @State private var primaryEpisode: JellyfinClient.LibraryItem?
+    @State private var primaryActionTitle: String = "Play"
+    @State private var primaryActionSubtitle: String? = nil
+
     @State private var isLoading = true
     @State private var isLoadingEpisodes = false
     @State private var errorMessage: String?
@@ -58,6 +62,7 @@ struct SeriesDetailView: View {
                 PlayerView(
                     url: url,
                     title: details?.name ?? series.name ?? "",
+                    subtitle: primaryActionSubtitle,
                     posterURL: session.itemImageURL(for: series, maxWidth: 700)
                 )
             }
@@ -65,6 +70,59 @@ struct SeriesDetailView: View {
     }
 
     // MARK: - UI
+
+
+private var primaryPlayRow: some View {
+    HStack(spacing: 10) {
+        Button {
+            Task { await playPrimary() }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "play.fill")
+                    .font(.subheadline.weight(.bold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(primaryActionTitle)
+                        .font(.subheadline.weight(.semibold))
+                    if let sub = primaryActionSubtitle, !sub.isEmpty {
+                        Text(sub)
+                            .font(.caption)
+                            .foregroundStyle(.black.opacity(0.75))
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .foregroundStyle(.black)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(BrockbusterTheme.ticketYellow)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(primaryEpisode == nil && isLoading)
+
+        Button {
+            // Jump user down to episodes; the season list is already visible.
+            withAnimation(.easeInOut(duration: 0.25)) {
+                // no-op; kept for future anchor scroll
+            }
+        } label: {
+            Image(systemName: "list.bullet")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(BrockbusterTheme.textPrimary)
+                .padding(12)
+                .background(.white.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Browse episodes")
+    }
+}
+
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -97,6 +155,8 @@ struct SeriesDetailView: View {
                             .foregroundStyle(BrockbusterTheme.textSecondary)
                             .lineLimit(4)
                     }
+
+                    primaryPlayRow
 
                     HStack(spacing: 10) {
                         if let season = selectedSeason {
@@ -210,12 +270,41 @@ struct SeriesDetailView: View {
             seasons = seasonsResult
                 .filter { $0.type?.lowercased() == "season" || $0.name != nil }
 
+            // Resolve primary play action (Resume / Next Episode / Play)
+            do {
+                if let nextUp = try await session.fetchNextUpEpisode(seriesId: series.id) {
+                    primaryEpisode = nextUp
+                    let pos = nextUp.userData?.playbackPositionTicks ?? 0
+                    let played = nextUp.userData?.played ?? false
+                    if pos > 0 && !played {
+                        primaryActionTitle = "Resume"
+                    } else {
+                        primaryActionTitle = "Next Episode"
+                    }
+                    primaryActionSubtitle = episodeSubtitle(for: nextUp)
+                } else {
+                    primaryEpisode = nil
+                    primaryActionTitle = "Play"
+                    primaryActionSubtitle = nil
+                }
+            } catch {
+                // If NextUp fails, continue with normal season/episode browsing.
+                primaryEpisode = nil
+                primaryActionTitle = "Play"
+                primaryActionSubtitle = nil
+            }
+
             if selectedSeason == nil {
                 selectedSeason = seasons.first
             }
 
             if let selectedSeason {
                 await selectSeason(selectedSeason)
+                // Fallback primary episode to the first episode of the first season.
+                if primaryEpisode == nil {
+                    primaryEpisode = episodes.first
+                    if let ep = primaryEpisode { primaryActionSubtitle = episodeSubtitle(for: ep) }
+                }
             }
         } catch {
             errorMessage = "Unable to load show details. \(error.localizedDescription)"
@@ -244,6 +333,31 @@ struct SeriesDetailView: View {
         }
     }
 
+
+private func playPrimary() async {
+    // Prefer resolved primary episode; otherwise fall back to first visible episode.
+    if let ep = primaryEpisode {
+        await play(episode: ep)
+        return
+    }
+    if let ep = filteredEpisodes.first {
+        await play(episode: ep)
+    }
+}
+
+    private func episodeSubtitle(for ep: JellyfinClient.LibraryItem) -> String {
+        var parts: [String] = []
+        if let s = ep.parentIndexNumber, s > 0 { parts.append("S\(s)") }
+        if let e = ep.indexNumber, e > 0 { parts.append("E\(e)") }
+        let se = parts.joined(separator: "")
+        let name = ep.name ?? ""
+        if se.isEmpty { return name }
+        if !name.isEmpty {
+            return "\(se) • \(name)"
+        }
+        return se
+    }
+
     private func seasonDisplayName(_ season: JellyfinClient.LibraryItem) -> String {
         if let index = season.indexNumber {
             return index == 0 ? "Specials" : "Season \(index)"
@@ -256,6 +370,7 @@ struct SeriesDetailView: View {
         do {
             let url = try await session.streamURL(for: episode.id)
             playerURL = url
+            primaryActionSubtitle = episodeSubtitle(for: episode)
             showPlayer = true
         } catch {
             errorMessage = error.localizedDescription

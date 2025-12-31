@@ -14,6 +14,8 @@ struct ItemDetailView: View {
     @State private var detail: JellyfinClient.ItemDetail?
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
+    @State private var people: [JellyfinClient.Person] = []
+    @State private var playbackSubtitle: String = ""
     // State for presenting the video player
     @State private var showPlayer: Bool = false
     @State private var playerURL: URL?
@@ -57,9 +59,12 @@ struct ItemDetailView: View {
                         Text(detail.name)
                             .font(BrockbusterTheme.Fonts.largeTitle)
                             .foregroundColor(BrockbusterTheme.brockLight)
-                        // Note: Jellyfin "taglines" are not always present and the field
-                        // may not exist in every server/version payload we encounter. We
-                        // intentionally avoid depending on it for build stability.
+                        if let tagline = detail.taglines?.first, !tagline.isEmpty {
+                            Text(tagline)
+                                .font(.title3.weight(.semibold))
+                                .foregroundColor(BrockbusterTheme.brockLight.opacity(0.9))
+                                .padding(.top, -10)
+                        }
                         // Info chips (year, runtime, rating)
                         HStack(spacing: 12) {
                             if let year = detail.productionYear {
@@ -85,21 +90,77 @@ struct ItemDetailView: View {
                                 .foregroundColor(BrockbusterTheme.brockLight.opacity(0.9))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                    // Play button
-                    Button(action: playItem) {
-                        HStack {
-                            Image(systemName: "play.circle.fill")
-                                .font(.title2)
-                            Text("Play")
-                                .font(BrockbusterTheme.Fonts.body.weight(.bold))
+// Cast
+let cast = people.filter { ($0.type ?? "").lowercased().contains("actor") || ($0.role ?? "").isEmpty == false }
+if !cast.isEmpty {
+    VStack(alignment: .leading, spacing: 10) {
+        Text("Cast")
+            .font(.headline)
+            .foregroundColor(BrockbusterTheme.brockLight)
+
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(cast.prefix(24)) { person in
+                    VStack(spacing: 8) {
+                        ZStack {
+                            if let url = session.personImageURL(for: person, maxWidth: 240) {
+                                AsyncImage(url: url) { phase in
+                                    switch phase {
+                                    case .empty:
+                                        Circle().fill(BrockbusterTheme.brockDark.opacity(0.35))
+                                    case .success(let image):
+                                        image.resizable().scaledToFill()
+                                    case .failure:
+                                        Circle().fill(BrockbusterTheme.brockDark.opacity(0.35))
+                                            .overlay(Image(systemName: "person.fill").foregroundColor(BrockbusterTheme.brockGold))
+                                    @unknown default:
+                                        EmptyView()
+                                    }
+                                }
+                            } else {
+                                Circle().fill(BrockbusterTheme.brockDark.opacity(0.35))
+                                    .overlay(Image(systemName: "person.fill").foregroundColor(BrockbusterTheme.brockGold))
+                            }
                         }
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .foregroundColor(BrockbusterTheme.brockDark)
-                        .background(BrockbusterTheme.brockGold)
-                        .cornerRadius(12)
+                        .frame(width: 64, height: 64)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+
+                        Text(person.name)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(BrockbusterTheme.brockLight)
+                            .lineLimit(1)
+
+                        if let role = person.role, !role.isEmpty {
+                            Text(role)
+                                .font(.caption2)
+                                .foregroundColor(BrockbusterTheme.brockLight.opacity(0.75))
+                                .lineLimit(1)
+                        }
                     }
-                    .padding(.top, 16)
+                    .frame(width: 92)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+}
+
+                        // Play button
+                        Button(action: playItem) {
+                            HStack {
+                                Image(systemName: "play.circle.fill")
+                                    .font(.title2)
+                                Text("Play")
+                                    .font(BrockbusterTheme.Fonts.body.weight(.bold))
+                            }
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .foregroundColor(BrockbusterTheme.brockDark)
+                            .background(BrockbusterTheme.brockGold)
+                            .cornerRadius(12)
+                        }
+                        .padding(.top, 16)
                     } else if isLoading {
                         VStack(spacing: 16) {
                             ProgressView("Loading…")
@@ -138,6 +199,7 @@ struct ItemDetailView: View {
                 PlayerView(
                     url: url,
                     title: detail?.name ?? item.name,
+                    subtitle: playbackSubtitle,
                     posterURL: session.itemImageURL(for: item, maxWidth: 700)
                 )
             }
@@ -151,6 +213,13 @@ struct ItemDetailView: View {
         do {
             let fetched = try await session.fetchItemDetails(itemId: item.id)
             detail = fetched
+            // Best-effort: load cast/crew
+            do {
+                people = try await session.fetchPeople(for: item.id)
+            } catch {
+                // Non-fatal
+                people = []
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -181,6 +250,40 @@ struct ItemDetailView: View {
             do {
                 let url = try await session.streamURL(for: item.id)
                 playerURL = url
+                playbackSubtitle = buildPlaybackSubtitle()
+                showPlayer = true
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoading = false
+        }
+    }
+
+    /// Build a subtitle string for playback UI using available metadata.
+    private func buildPlaybackSubtitle() -> String {
+        var parts: [String] = []
+        if let year = detail?.productionYear {
+            parts.append(String(year))
+        }
+        if let ticks = detail?.runTimeTicks {
+            parts.append(formatRuntime(ticks))
+        }
+        if let rating = detail?.communityRating {
+            parts.append(String(format: "%.1f★", rating))
+        }
+        return parts.joined(separator: " • ")
+    }
+
+    /// Optional: Play a collection (season/series/album) if invoked elsewhere.
+    /// Provides a basic implementation mirroring `playItem()` to satisfy references.
+    private func playCollection() {
+        guard !isLoading else { return }
+        isLoading = true
+        Task {
+            do {
+                let url = try await session.streamURL(for: item.id)
+                playerURL = url
+                playbackSubtitle = buildPlaybackSubtitle()
                 showPlayer = true
             } catch {
                 errorMessage = error.localizedDescription
@@ -207,6 +310,4 @@ private struct InfoChip: View {
             )
     }
 }
-
-
 

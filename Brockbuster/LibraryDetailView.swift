@@ -173,19 +173,17 @@ struct LibraryDetailView: View {
     /// to SeasonDetailView; if it's a collection (BoxSet/CollectionFolder) navigate
     /// to CollectionDetailView; otherwise navigate to ItemDetailView.
     private func destinationView(for item: JellyfinClient.LibraryItem) -> some View {
-        if let mediaType = item.mediaType?.lowercased() {
-            switch mediaType {
-            case "series":
-                return AnyView(SeriesDetailView(series: item))
-            case "season":
-                return AnyView(SeasonDetailView(season: item))
-            case "boxset", "collection", "collectionfolder":
-                return AnyView(CollectionDetailView(collection: item))
-            default:
-                break
-            }
+        let type = (item.type ?? "").lowercased()
+        switch type {
+        case "series":
+            return AnyView(SeriesDetailView(series: item))
+        case "season":
+            return AnyView(SeasonDetailView(season: item))
+        case "boxset", "collectionfolder", "collection":
+            return AnyView(CollectionDetailView(collection: item))
+        default:
+            return AnyView(ItemDetailView(item: item))
         }
-        return AnyView(ItemDetailView(item: item))
     }
 
     /// Load the items for this library using the session store.  Updates loading
@@ -208,7 +206,7 @@ struct LibraryDetailView: View {
         let imageURL: URL?
 
         var isEpisode: Bool {
-            (item.mediaType?.lowercased() == "episode")
+            (item.type ?? "").lowercased() == "episode"
         }
 
         var body: some View {

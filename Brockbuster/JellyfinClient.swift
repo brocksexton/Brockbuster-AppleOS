@@ -291,7 +291,7 @@ final class JellyfinClient {
             URLQueryItem(name: "ParentId", value: parentId),
             URLQueryItem(name: "Recursive", value: recursive ? "true" : "false"),
             // Request richer metadata so we can build detailed pages without extra roundtrips.
-            URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,Overview,CommunityRating,ProductionYear,RunTimeTicks,ParentId,ImageTags,BackdropImageTags,ParentIndexNumber,IndexNumber,SortName,PremiereDate"),
+            URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,Overview,CommunityRating,ProductionYear,RunTimeTicks,ParentId,ImageTags,BackdropImageTags,ParentIndexNumber,IndexNumber,SortName,PremiereDate,UserData,SeriesId,SeasonId,SeriesName"),
             URLQueryItem(name: "EnableImageTypes", value: "Primary,Backdrop,Thumb"),
             URLQueryItem(name: "ImageTypeLimit", value: "1")
         ]
@@ -358,6 +358,20 @@ final class JellyfinClient {
         }
     }
 
+
+/// Represents per-user playback data attached to items when requested via the `Fields=UserData` parameter.
+struct UserData: Decodable {
+    let playbackPositionTicks: Int?
+    let played: Bool?
+    let lastPlayedDate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case playbackPositionTicks = "PlaybackPositionTicks"
+        case played = "Played"
+        case lastPlayedDate = "LastPlayedDate"
+    }
+}
+
     /// Represents a media item inside a library.  Only includes a subset of fields that are
     /// useful for browsing.  You can extend this struct with additional properties as
     /// needed.
@@ -377,6 +391,14 @@ final class JellyfinClient {
         let indexNumber: Int?
         let parentIndexNumber: Int?
 
+        /// Additional linkage fields (present depending on the endpoint / fields requested)
+        let seriesId: String?
+        let seasonId: String?
+        let seriesName: String?
+
+        /// Per-user playback state (when requested via Fields=UserData)
+        let userData: UserData?
+
         enum CodingKeys: String, CodingKey {
             case id = "Id"
             case name = "Name"
@@ -388,6 +410,10 @@ final class JellyfinClient {
             case productionYear = "ProductionYear"
             case indexNumber = "IndexNumber"
             case parentIndexNumber = "ParentIndexNumber"
+            case seriesId = "SeriesId"
+            case seasonId = "SeasonId"
+            case seriesName = "SeriesName"
+            case userData = "UserData"
         }
     }
 
@@ -471,6 +497,23 @@ final class JellyfinClient {
         }
     }
 
+
+/// Construct a URL for a person's primary image.
+func personImageURL(for person: Person, maxWidth: Int? = nil) -> URL? {
+    let base = baseURL.appendingPathComponent("Items/\(person.id)/Images/Primary")
+    if let tag = person.primaryImageTag {
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        var items: [URLQueryItem] = [URLQueryItem(name: "tag", value: tag)]
+        if let width = maxWidth {
+            items.append(URLQueryItem(name: "maxWidth", value: String(width)))
+        }
+        components?.queryItems = items
+        return components?.url ?? base
+    }
+    return base
+}
+
+
     // MARK: - Item detail retrieval
 
     /// Fetch detailed information for a specific media item.  The item ID is
@@ -525,6 +568,125 @@ final class JellyfinClient {
         }
         task.resume()
     }
+
+
+// MARK: - People (cast/crew)
+
+/// Represents a person (actor/crew) returned by Jellyfin's `/Items/{id}/People` endpoint.
+struct Person: Identifiable, Decodable {
+    let id: String
+    let name: String
+    let role: String?
+    let type: String?
+    let primaryImageTag: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id = "Id"
+        case name = "Name"
+        case role = "Role"
+        case type = "Type"
+        case primaryImageTag = "PrimaryImageTag"
+    }
+}
+
+/// Fetch cast/crew for an item via `/Items/{itemId}/People`.
+func fetchPeople(for itemId: String, userId: String?, completion: @escaping (Result<[Person], Error>) -> Void) {
+    var components = URLComponents(url: baseURL.appendingPathComponent("Items/\(itemId)/People"), resolvingAgainstBaseURL: false)!
+    if let userId {
+        components.queryItems = [URLQueryItem(name: "UserId", value: userId)]
+    }
+    guard let url = components.url else {
+        DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
+        return
+    }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+    request.timeoutInterval = 30
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue(buildAuthorizationHeader(withToken: accessToken), forHTTPHeaderField: "X-Emby-Authorization")
+    request.setValue("Brockbuster/\(appVersion) (SwiftUI; Darwin)", forHTTPHeaderField: "User-Agent")
+
+    let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        if let error = error {
+            DispatchQueue.main.async { completion(.failure(error)) }
+            return
+        }
+        guard let http = response as? HTTPURLResponse else {
+            DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
+            return
+        }
+        guard (200...299).contains(http.statusCode) else {
+            DispatchQueue.main.async { completion(.failure(NetworkError.httpStatus(code: http.statusCode))) }
+            return
+        }
+        guard let data else {
+            DispatchQueue.main.async { completion(.failure(NetworkError.emptyResponse)) }
+            return
+        }
+        do {
+            let people = try JSONDecoder().decode([Person].self, from: data)
+            DispatchQueue.main.async { completion(.success(people)) }
+        } catch {
+            DispatchQueue.main.async { completion(.failure(error)) }
+        }
+    }
+    task.resume()
+}
+
+// MARK: - Next Up (TV)
+
+/// Fetch the next-up episode for a series via `/Shows/NextUp`.
+/// This endpoint returns episodes the user should watch next (or resume).
+func fetchNextUpEpisode(seriesId: String, userId: String, completion: @escaping (Result<LibraryItem?, Error>) -> Void) {
+    var components = URLComponents(url: baseURL.appendingPathComponent("Shows/NextUp"), resolvingAgainstBaseURL: false)!
+    components.queryItems = [
+        URLQueryItem(name: "UserId", value: userId),
+        URLQueryItem(name: "SeriesId", value: seriesId),
+        URLQueryItem(name: "Limit", value: "1"),
+        URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,Overview,CommunityRating,ProductionYear,RunTimeTicks,ParentId,ImageTags,BackdropImageTags,ParentIndexNumber,IndexNumber,SortName,PremiereDate,UserData,SeriesId,SeasonId,SeriesName"),
+        URLQueryItem(name: "EnableImageTypes", value: "Primary,Backdrop,Thumb"),
+        URLQueryItem(name: "ImageTypeLimit", value: "1")
+    ]
+    guard let url = components.url else {
+        DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
+        return
+    }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+    request.timeoutInterval = 30
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue(buildAuthorizationHeader(withToken: accessToken), forHTTPHeaderField: "X-Emby-Authorization")
+    request.setValue("Brockbuster/\(appVersion) (SwiftUI; Darwin)", forHTTPHeaderField: "User-Agent")
+
+    let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        if let error = error {
+            DispatchQueue.main.async { completion(.failure(error)) }
+            return
+        }
+        guard let http = response as? HTTPURLResponse else {
+            DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
+            return
+        }
+        guard (200...299).contains(http.statusCode) else {
+            DispatchQueue.main.async { completion(.failure(NetworkError.httpStatus(code: http.statusCode))) }
+            return
+        }
+        guard let data else {
+            DispatchQueue.main.async { completion(.failure(NetworkError.emptyResponse)) }
+            return
+        }
+        do {
+            let wrapper = try JSONDecoder().decode(ItemsResponse.self, from: data)
+            DispatchQueue.main.async { completion(.success(wrapper.items.first)) }
+        } catch {
+            DispatchQueue.main.async { completion(.failure(error)) }
+        }
+    }
+    task.resume()
+}
+
 
     // MARK: - Authorization header helper
 

@@ -11,6 +11,7 @@ import AVKit
 struct PlayerView: View {
     let url: URL
     let title: String
+    let subtitle: String?
     let posterURL: URL?
 
     @Environment(\.dismiss) private var dismiss
@@ -68,7 +69,7 @@ struct PlayerView: View {
                     .font(.headline)
                     .foregroundColor(.white)
                     .lineLimit(1)
-                Text("Brockbuster")
+                Text(subtitle ?? "Brockbuster")
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.8))
             }

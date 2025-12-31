@@ -384,6 +384,13 @@ final class SessionStore: ObservableObject {
         return client.itemImageURL(for: item, maxWidth: maxWidth)
     }
 
+
+
+/// Construct the URL for a person's primary image.
+func personImageURL(for person: JellyfinClient.Person, maxWidth: Int? = nil) -> URL? {
+    return client.personImageURL(for: person, maxWidth: maxWidth)
+}
+
     /// Construct the URL for a detailed media item's image.  Returns nil if there is no image.
     func itemImageURL(for detail: JellyfinClient.ItemDetail, maxWidth: Int? = nil) -> URL? {
         return client.itemImageURL(for: detail, maxWidth: maxWidth)
@@ -406,6 +413,80 @@ final class SessionStore: ObservableObject {
             }
         }
     }
+
+// MARK: - TV helpers (Next Up / Resume)
+
+/// Fetch Jellyfin "Next Up" episode for a given series.
+func fetchNextUpEpisode(seriesId: String) async throws -> JellyfinClient.LibraryItem? {
+    guard let userId = currentUser?.id else { return nil }
+    return try await withCheckedThrowingContinuation { continuation in
+        client.fetchNextUpEpisode(seriesId: seriesId, userId: userId) { result in
+            switch result {
+            case .success(let episode):
+                continuation.resume(returning: episode)
+            case .failure(let error):
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+}
+
+/// Fetch cast/crew for a given item (movies, series, episodes).
+func fetchPeople(for itemId: String) async throws -> [JellyfinClient.Person] {
+    guard let userId = currentUser?.id else { return [] }
+    return try await withCheckedThrowingContinuation { continuation in
+        client.fetchPeople(for: itemId, userId: userId) { result in
+            switch result {
+            case .success(let people):
+                continuation.resume(returning: people)
+            case .failure(let error):
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+}
+
+/// Determine the best "primary play" target for a series. Tries NextUp first,
+/// then falls back to S1E1.
+func resolvePrimaryEpisodeForSeries(seriesId: String) async throws -> JellyfinClient.LibraryItem? {
+    if let nextUp = try await fetchNextUpEpisode(seriesId: seriesId) {
+        return nextUp
+    }
+    // Fallback: load first season, then first episode.
+    let seasons = try await fetchItems(
+        for: JellyfinClient.LibraryItem(
+            id: seriesId,
+            name: "",
+            type: "Series",
+            mediaType: nil,
+            runtimeTicks: nil,
+            primaryImageTag: nil,
+            overview: nil,
+            productionYear: nil,
+            indexNumber: nil,
+            parentIndexNumber: nil,
+            seriesId: nil,
+            seasonId: nil,
+            seriesName: nil,
+            userData: nil
+        ),
+        includeItemTypes: ["Season"],
+        sortBy: ["ParentIndexNumber", "IndexNumber", "SortName"],
+        sortOrder: "Ascending"
+    )
+    if let firstSeason = seasons.first {
+        let episodes = try await fetchItems(
+            for: firstSeason,
+            includeItemTypes: ["Episode"],
+            sortBy: ["ParentIndexNumber", "IndexNumber", "SortName"],
+            sortOrder: "Ascending"
+        )
+        return episodes.first
+    }
+    return nil
+}
+
+
 
     /// Compute a human-readable membership duration string based on the join date.
     /// If the join date is nil, the user is assumed to be a new member.  The

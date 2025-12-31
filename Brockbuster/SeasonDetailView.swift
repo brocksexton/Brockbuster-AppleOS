@@ -143,7 +143,11 @@ struct SeasonDetailView_Previews: PreviewProvider {
             overview: nil,
             productionYear: nil,
             indexNumber: 1,
-            parentIndexNumber: nil
+            parentIndexNumber: nil,
+            seriesId: nil,
+            seasonId: nil,
+            seriesName: nil,
+            userData: nil
         )
 
         SeasonDetailView(season: dummySeason)

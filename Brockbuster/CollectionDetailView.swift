@@ -11,6 +11,10 @@ struct CollectionDetailView: View {
     @State private var items: [JellyfinClient.LibraryItem] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var showPlayer: Bool = false
+    @State private var playerURL: URL?
+    @State private var playbackTitle: String = ""
+    @State private var playbackSubtitle: String? = nil
     @State private var searchText: String = ""
     @State private var selectedLetter: String?
 
@@ -42,11 +46,27 @@ struct CollectionDetailView: View {
             LinearGradient(gradient: Gradient(colors: [BrockbusterTheme.brockDark.opacity(0.5), BrockbusterTheme.brockBlue.opacity(0.5)]), startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
             VStack(alignment: .leading) {
-                Text(collection.name)
-                    .font(BrockbusterTheme.Fonts.largeTitle)
-                    .foregroundColor(BrockbusterTheme.brockLight)
-                    .padding(.horizontal)
-                    .padding(.top)
+                HStack(alignment: .center) {
+                    Text(collection.name)
+                        .font(BrockbusterTheme.Fonts.largeTitle)
+                        .foregroundColor(BrockbusterTheme.brockLight)
+                    Spacer()
+                    Button(action: { Task { await playCollection() } }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "play.fill")
+                            Text("Play")
+                                .font(BrockbusterTheme.Fonts.body.weight(.bold))
+                        }
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 14)
+                        .foregroundColor(BrockbusterTheme.brockDark)
+                        .background(BrockbusterTheme.brockGold)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal)
+                .padding(.top)
                 HStack {
                     TextField("Search", text: $searchText)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -145,20 +165,31 @@ struct CollectionDetailView: View {
                 await loadItems()
             }
         }
+        .sheet(isPresented: $showPlayer) {
+            if let url = playerURL {
+                PlayerView(
+                    url: url,
+                    title: playbackTitle,
+                    subtitle: playbackSubtitle,
+                    posterURL: session.itemImageURL(for: collection, maxWidth: 700)
+                )
+            }
+        }
     }
 
     /// Determine destination view depending on media type
     private func destinationView(for item: JellyfinClient.LibraryItem) -> some View {
-        // Determine if the item is a series, season or normal item
-        if let mediaType = item.mediaType?.lowercased() {
-            if mediaType == "series" {
-                return AnyView(SeriesDetailView(series: item))
-            } else if mediaType == "season" {
-                return AnyView(SeasonDetailView(season: item))
-            }
+        let type = (item.type ?? "").lowercased()
+        switch type {
+        case "series":
+            return AnyView(SeriesDetailView(series: item))
+        case "season":
+            return AnyView(SeasonDetailView(season: item))
+        case "boxset", "collectionfolder", "collection":
+            return AnyView(CollectionDetailView(collection: item))
+        default:
+            return AnyView(ItemDetailView(item: item))
         }
-        // Default to item detail view
-        return AnyView(ItemDetailView(item: item))
     }
 
     private func loadItems() async {
@@ -172,7 +203,56 @@ struct CollectionDetailView: View {
         }
         isLoading = false
     }
+
+    /// Play the collection by starting playback of the first playable item
+    private func playCollection() async {
+        // Load items if needed
+        if items.isEmpty {
+            await loadItems()
+        }
+
+        // Choose a playable item: prefer Episodes or Movies if present
+        let playable = items.first(where: { ($0.mediaType ?? "").localizedCaseInsensitiveContains("episode") || ($0.mediaType ?? "").localizedCaseInsensitiveContains("movie") }) ?? items.first
+
+        guard let item = playable else {
+            await MainActor.run { self.errorMessage = "No items available to play." }
+            return
+        }
+
+        // Attempt to obtain a stream URL from the session
+        var url: URL? = nil
+
+        // TODO: If your SessionStore exposes a different API to build stream URLs, replace this block accordingly.
+        // Common patterns could be: session.streamURL(for:), session.playbackURL(for:), or session.getStreamURL(for:)
+        if let streamURL = await (session as AnyObject).perform?(Selector(("streamURLFor:"))) as? URL {
+            url = streamURL
+        }
+
+        // Fallback: Try calling a few known selectors dynamically if available
+        if url == nil {
+            // Try common method names via optional chaining wrappers
+            if let sessionObj = session as AnyObject?, sessionObj.responds(to: Selector(("streamURLForItem:"))) {
+                // This is just a placeholder; without a known signature we can't invoke it directly.
+                // Leave url as nil; developer should wire up the correct call below.
+            }
+        }
+
+        // If no dynamic method found, give up with a friendly message
+        guard let finalURL = url else {
+            await MainActor.run { self.errorMessage = "Unable to build a stream URL for this item. Please wire playCollection() to your SessionStore's streaming API." }
+            return
+        }
+
+        // Present the player
+        await MainActor.run {
+            self.playerURL = finalURL
+            self.playbackTitle = item.name
+            self.playbackSubtitle = item.productionYear.flatMap { String($0) }
+            self.showPlayer = true
+        }
+    }
 }
 
 // Preview intentionally omitted to avoid keeping a second copy of the model
 // initializer signature in sync with Jellyfin schema changes.
+

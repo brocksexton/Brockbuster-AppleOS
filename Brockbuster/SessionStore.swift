@@ -353,14 +353,31 @@ final class SessionStore: ObservableObject {
             }
             return url
         }
-        // Otherwise construct a stream URL using the Videos endpoint
+        // Otherwise construct a stream URL using the Videos endpoint.
+        // We preferentially use HLS (m3u8) with an Apple-compatible profile.
+        // This allows Jellyfin to remux/transcode when a device cannot direct-play
+        // a given container/codec (e.g., MKV, DTS, etc.).
         let mediaSourceId = playbackInfo.mediaSources.first?.id
         let playSessionId = playbackInfo.playSessionId
-        // First attempt direct stream URL
+
+        // First attempt HLS playlist URL (server will remux/transcode as needed).
+        if let hlsURL = client.makeHLSURL(itemId: itemId, mediaSourceId: mediaSourceId, playSessionId: playSessionId, userId: currentUser?.id) {
+            return hlsURL
+        }
+
+        // Fallback to direct stream URL.
         if let streamURL = client.makeStreamURL(itemId: itemId, mediaSourceId: mediaSourceId, playSessionId: playSessionId, userId: currentUser?.id) {
             return streamURL
         }
-        // Fallback to HLS playlist URL
+        throw JellyfinClient.NetworkError.invalidResponse
+    }
+
+    /// If you ever want to force a transcoded HLS URL explicitly, call this helper.
+    /// Currently this is the same as the preferred URL in `streamURL(for:)`.
+    func transcodedHLSURL(for itemId: String) async throws -> URL {
+        let playbackInfo = try await fetchPlaybackInfo(itemId: itemId)
+        let mediaSourceId = playbackInfo.mediaSources.first?.id
+        let playSessionId = playbackInfo.playSessionId
         if let hlsURL = client.makeHLSURL(itemId: itemId, mediaSourceId: mediaSourceId, playSessionId: playSessionId, userId: currentUser?.id) {
             return hlsURL
         }

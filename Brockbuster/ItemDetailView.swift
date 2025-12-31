@@ -197,6 +197,7 @@ if !cast.isEmpty {
         .sheet(isPresented: $showPlayer) {
             if let url = playerURL {
                 PlayerView(
+                    itemId: item.id,
                     url: url,
                     title: detail?.name ?? item.name,
                     subtitle: playbackSubtitle,

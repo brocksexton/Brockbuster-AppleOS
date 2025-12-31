@@ -60,6 +60,7 @@ struct SeriesDetailView: View {
         .sheet(isPresented: $showPlayer) {
             if let url = playerURL {
                 PlayerView(
+                    itemId: primaryEpisode?.id ?? series.id,
                     url: url,
                     title: details?.name ?? series.name ?? "",
                     subtitle: primaryActionSubtitle,

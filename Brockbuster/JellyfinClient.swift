@@ -833,6 +833,13 @@ func fetchNextUpEpisode(seriesId: String, userId: String, completion: @escaping 
     func makeHLSURL(itemId: String, mediaSourceId: String?, playSessionId: String?, userId: String?) -> URL? {
         var components = URLComponents(url: baseURL.appendingPathComponent("Videos/\(itemId)/main.m3u8"), resolvingAgainstBaseURL: false)!
         var query: [URLQueryItem] = []
+
+        // Prefer a universally compatible Apple playback profile.
+        // This encourages the server to remux/transcode into HLS
+        // with H.264 video + AAC audio in a TS container when needed.
+        query.append(URLQueryItem(name: "Container", value: "ts"))
+        query.append(URLQueryItem(name: "VideoCodec", value: "h264"))
+        query.append(URLQueryItem(name: "AudioCodec", value: "aac"))
         if let mediaSourceId = mediaSourceId {
             query.append(URLQueryItem(name: "mediaSourceId", value: mediaSourceId))
         }

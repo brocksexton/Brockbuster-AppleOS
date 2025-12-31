@@ -364,55 +364,30 @@ final class JellyfinClient {
     struct LibraryItem: Identifiable, Decodable {
         let id: String
         let name: String
+        /// Jellyfin "Type" (e.g. Movie, Series, Season, Episode, BoxSet).
+        let type: String?
+        /// Jellyfin "MediaType" (commonly Video / Audio). Some endpoints omit this.
         let mediaType: String?
-        let overview: String?
-        let productionYear: Int?
-        let officialRating: String?
-        let indexNumber: Int?
-        let parentIndexNumber: Int?
-        let seriesId: String?
-        let parentId: String?
         let runtimeTicks: Int?
         let primaryImageTag: String?
 
-        init(id: String,
-             name: String,
-             mediaType: String? = nil,
-             overview: String? = nil,
-             productionYear: Int? = nil,
-             officialRating: String? = nil,
-             indexNumber: Int? = nil,
-             parentIndexNumber: Int? = nil,
-             seriesId: String? = nil,
-             parentId: String? = nil,
-             runtimeTicks: Int? = nil,
-             primaryImageTag: String? = nil) {
-            self.id = id
-            self.name = name
-            self.mediaType = mediaType
-            self.overview = overview
-            self.productionYear = productionYear
-            self.officialRating = officialRating
-            self.indexNumber = indexNumber
-            self.parentIndexNumber = parentIndexNumber
-            self.seriesId = seriesId
-            self.parentId = parentId
-            self.runtimeTicks = runtimeTicks
-            self.primaryImageTag = primaryImageTag
-        }
+        // Optional rich fields (present depending on endpoint / item type)
+        let overview: String?
+        let productionYear: Int?
+        let indexNumber: Int?
+        let parentIndexNumber: Int?
+
         enum CodingKeys: String, CodingKey {
             case id = "Id"
             case name = "Name"
-            case mediaType = "Type"
-            case overview = "Overview"
-            case productionYear = "ProductionYear"
-            case officialRating = "OfficialRating"
-            case indexNumber = "IndexNumber"
-            case parentIndexNumber = "ParentIndexNumber"
-            case seriesId = "SeriesId"
-            case parentId = "ParentId"
+            case type = "Type"
+            case mediaType = "MediaType"
             case runtimeTicks = "RunTimeTicks"
             case primaryImageTag = "PrimaryImageTag"
+            case overview = "Overview"
+            case productionYear = "ProductionYear"
+            case indexNumber = "IndexNumber"
+            case parentIndexNumber = "ParentIndexNumber"
         }
     }
 
@@ -424,55 +399,26 @@ final class JellyfinClient {
     struct ItemDetail: Identifiable, Decodable {
         let id: String
         let name: String
-        let mediaType: String?
         let overview: String?
+        let mediaType: String?
+        let runTimeTicks: Int?
         let productionYear: Int?
-        let officialRating: String?
-        let seriesId: String?
-        let parentId: String?
-        let runtimeTicks: Int?
-        let genres: [String]?
         let communityRating: Double?
         let primaryImageTag: String?
+        let genres: [String]?
+        let taglines: [String]?
 
-        init(id: String,
-             name: String,
-             mediaType: String? = nil,
-             overview: String? = nil,
-             productionYear: Int? = nil,
-             officialRating: String? = nil,
-             seriesId: String? = nil,
-             parentId: String? = nil,
-             runtimeTicks: Int? = nil,
-             genres: [String]? = nil,
-             communityRating: Double? = nil,
-             primaryImageTag: String? = nil) {
-            self.id = id
-            self.name = name
-            self.mediaType = mediaType
-            self.overview = overview
-            self.productionYear = productionYear
-            self.officialRating = officialRating
-            self.seriesId = seriesId
-            self.parentId = parentId
-            self.runtimeTicks = runtimeTicks
-            self.genres = genres
-            self.communityRating = communityRating
-            self.primaryImageTag = primaryImageTag
-        }
         enum CodingKeys: String, CodingKey {
             case id = "Id"
             case name = "Name"
-            case mediaType = "Type"
             case overview = "Overview"
+            case mediaType = "MediaType"
+            case runTimeTicks = "RunTimeTicks"
             case productionYear = "ProductionYear"
-            case officialRating = "OfficialRating"
-            case seriesId = "SeriesId"
-            case parentId = "ParentId"
-            case runtimeTicks = "RunTimeTicks"
-            case genres = "Genres"
             case communityRating = "CommunityRating"
             case primaryImageTag = "PrimaryImageTag"
+            case genres = "Genres"
+            case taglines = "Taglines"
         }
     }
 

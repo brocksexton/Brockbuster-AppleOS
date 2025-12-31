@@ -136,14 +136,14 @@ struct SeasonDetailView_Previews: PreviewProvider {
         let dummySeason = JellyfinClient.LibraryItem(
             id: "sea123",
             name: "Season 1",
+            type: "Season",
             mediaType: "Season",
-            // type: "Season",
+            runtimeTicks: nil,
+            primaryImageTag: nil,
             overview: nil,
             productionYear: nil,
             indexNumber: 1,
-            parentIndexNumber: nil,
-            runtimeTicks: nil,
-            primaryImageTag: nil
+            parentIndexNumber: nil
         )
 
         SeasonDetailView(season: dummySeason)

@@ -174,24 +174,5 @@ struct CollectionDetailView: View {
     }
 }
 
-#if DEBUG
-struct CollectionDetailView_Previews: PreviewProvider {
-    static var previews: some View {
-        let dummyCollection = JellyfinClient.LibraryItem(
-            id: "col123",
-            name: "My Collection",
-            mediaType: "BoxSet",
-            // type: "BoxSet",
-            overview: "A sample collection used for previewing the UI.",
-            productionYear: nil,
-            indexNumber: nil,
-            parentIndexNumber: nil,
-            runtimeTicks: nil,
-            primaryImageTag: nil
-        )
-
-        CollectionDetailView(collection: dummyCollection)
-            .environmentObject(SessionStore())
-    }
-}
-#endif
+// Preview intentionally omitted to avoid keeping a second copy of the model
+// initializer signature in sync with Jellyfin schema changes.

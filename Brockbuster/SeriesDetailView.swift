@@ -8,7 +8,7 @@ struct SeriesDetailView: View {
     @EnvironmentObject private var session: SessionStore
     let series: JellyfinClient.LibraryItem
 
-    @State private var details: JellyfinClient.LibraryItem?
+    @State private var details: JellyfinClient.ItemDetail?
     @State private var seasons: [JellyfinClient.LibraryItem] = []
     @State private var selectedSeason: JellyfinClient.LibraryItem?
     @State private var episodes: [JellyfinClient.LibraryItem] = []
@@ -47,7 +47,7 @@ struct SeriesDetailView: View {
             .padding(.bottom, 24)
         }
         .background(BrockbusterTheme.Background)
-        .navigationTitle(series.name)
+        .navigationTitle(series.name ?? "Show")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
     }
@@ -57,7 +57,7 @@ struct SeriesDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 14) {
-                PosterImage(item: details ?? series, kind: .poster)
+                PosterImage(item: series, kind: .poster)
                     .frame(width: 110)
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .overlay(
@@ -66,19 +66,13 @@ struct SeriesDetailView: View {
                     )
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(details?.name ?? series.name)
+                    Text(details?.name ?? series.name ?? "")
                         .font(.system(size: 28, weight: .semibold, design: .rounded))
                         .foregroundStyle(BrockbusterTheme.textPrimary)
 
                     HStack(spacing: 8) {
                         if let year = (details?.productionYear ?? series.productionYear) {
                             Text(String(year))
-                        }
-                        if let rating = details?.officialRating, !rating.isEmpty {
-                            Text(rating)
-                        }
-                        if let runTime = details?.runTimeTicks {
-                            Text(BrockbusterFormat.runtimeMinutes(fromTicks: runTime))
                         }
                     }
                     .font(.subheadline)
@@ -94,10 +88,10 @@ struct SeriesDetailView: View {
 
                     HStack(spacing: 10) {
                         if let season = selectedSeason {
-                            BrockbusterTheme.Pill(text: seasonDisplayName(season))
+                            InfoPill(text: seasonDisplayName(season))
                         }
                         if isLoading {
-                            BrockbusterTheme.Pill(text: "Loading…", icon: "sparkles")
+                            InfoPill(text: "Loading…", icon: "sparkles")
                         }
                     }
                 }
@@ -118,31 +112,13 @@ struct SeriesDetailView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(seasons) { season in
+                    ForEach(seasons, id: \.id) { season in
                         let isSelected = season.id == selectedSeason?.id
-                        Button {
-                            Task { await selectSeason(season) }
-                        } label: {
-                            Text(seasonDisplayName(season))
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(isSelected ? .black : BrockbusterTheme.textPrimary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .background(
-                                    Group {
-                                        if isSelected {
-                                            BrockbusterTheme.ticketYellow
-                                        } else {
-                                            .white.opacity(0.10)
-                                        }
-                                    }
-                                )
-                                .clipShape(Capsule())
-                                .overlay(
-                                    Capsule().stroke(.white.opacity(isSelected ? 0 : 0.12), lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
+                        SeasonPill(
+                            title: seasonDisplayName(season),
+                            isSelected: isSelected,
+                            action: { Task { await selectSeason(season) } }
+                        )
                         .accessibilityLabel(seasonDisplayName(season))
                     }
                 }
@@ -264,6 +240,62 @@ struct SeriesDetailView: View {
     }
 }
 
+private struct SeasonPill: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isSelected ? .black : BrockbusterTheme.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(backgroundStyle)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule().stroke(.white.opacity(isSelected ? 0 : 0.12), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var backgroundStyle: some ShapeStyle {
+        if isSelected {
+            return BrockbusterTheme.ticketYellow
+        } else {
+            return .white.opacity(0.10)
+        }
+    }
+}
+
+private struct InfoPill: View {
+    let text: String
+    var icon: String? = nil
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.caption.weight(.semibold))
+            }
+            Text(text)
+                .font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(.black)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(BrockbusterTheme.ticketYellow)
+        .clipShape(Capsule())
+        .overlay(
+            Capsule().stroke(.white.opacity(0.0), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(text)
+    }
+}
+
 private struct EpisodeRow: View {
     let episode: JellyfinClient.LibraryItem
 
@@ -356,18 +388,19 @@ private struct PosterImage: View {
     private func imageURL() -> URL? {
         switch kind {
         case .poster:
-            return session.itemImageURL(id: item.id, imageType: "Primary", maxWidth: 720)
+            return session.itemImageURL(for: item, maxWidth: 720)
         case .thumb:
             // Episodes usually have a Primary. If not, fall back to series poster.
             // Episodes often have a Primary image representing the frame thumbnail.
             // Fall back to the series poster if none is available.
-            if let url = session.itemImageURL(id: item.id, imageType: "Primary", maxWidth: 420) {
+            if let url = session.itemImageURL(for: item, maxWidth: 420) {
                 return url
             }
-            if let seriesId = item.seriesId ?? item.parentId {
-                return session.itemImageURL(id: seriesId, imageType: "Primary", maxWidth: 720)
-            }
+            // If the item has no own art, fall back to a placeholder.
+            // (We intentionally do not attempt to walk series/parent relationships here
+            // because `LibraryItem` does not include those fields in this client model.)
             return nil
         }
     }
 }
+

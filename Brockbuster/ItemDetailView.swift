@@ -53,15 +53,13 @@ struct ItemDetailView: View {
                                 }
                             }
                         }
-                        // Title and tagline
+                        // Title
                         Text(detail.name)
                             .font(BrockbusterTheme.Fonts.largeTitle)
                             .foregroundColor(BrockbusterTheme.brockLight)
-                        if let taglines = detail.taglines, let first = taglines.first, !first.isEmpty {
-                            Text(first)
-                                .font(BrockbusterTheme.Fonts.body)
-                                .foregroundColor(BrockbusterTheme.brockGold)
-                        }
+                        // Note: Jellyfin "taglines" are not always present and the field
+                        // may not exist in every server/version payload we encounter. We
+                        // intentionally avoid depending on it for build stability.
                         // Info chips (year, runtime, rating)
                         HStack(spacing: 12) {
                             if let year = detail.productionYear {
@@ -137,7 +135,11 @@ struct ItemDetailView: View {
         // Present the video player when a URL is available
         .sheet(isPresented: $showPlayer) {
             if let url = playerURL {
-                PlayerView(url: url)
+                PlayerView(
+                    url: url,
+                    title: detail?.name ?? item.name,
+                    posterURL: session.itemImageURL(for: item, maxWidth: 700)
+                )
             }
         }
     }
@@ -206,24 +208,5 @@ private struct InfoChip: View {
     }
 }
 
-#if DEBUG
-struct ItemDetailView_Previews: PreviewProvider {
-    static var previews: some View {
-        let dummyItem = JellyfinClient.LibraryItem(
-            id: "123",
-            name: "Sample Movie",
-            mediaType: "Movie",
-            // type: "Movie",
-            overview: "A sample overview for previewing the item detail page.",
-            productionYear: 2024,
-            indexNumber: nil,
-            parentIndexNumber: nil,
-            runtimeTicks: 3600 * 10_000_000,
-            primaryImageTag: nil
-        )
 
-        ItemDetailView(item: dummyItem)
-            .environmentObject(SessionStore())
-    }
-}
-#endif
+

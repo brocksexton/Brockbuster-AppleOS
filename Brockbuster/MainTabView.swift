@@ -10,7 +10,7 @@ struct MainTabView: View {
 
     var body: some View {
         TabView {
-            NavigationView {
+            NavigationStack {
                 HomeView()
             }
             .tabItem {
@@ -18,7 +18,7 @@ struct MainTabView: View {
                 Text("Home")
             }
 
-            NavigationView {
+            NavigationStack {
                 MembershipCardView()
             }
             .tabItem {
@@ -26,7 +26,7 @@ struct MainTabView: View {
                 Text("Member")
             }
 
-            NavigationView {
+            NavigationStack {
                 MoreView()
             }
             .tabItem {

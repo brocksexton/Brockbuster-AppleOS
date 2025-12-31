@@ -17,61 +17,66 @@ struct HomeView: View {
         ZStack {
             background
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    header
+            GeometryReader { geo in
+                let contentWidth = min(820, max(0, geo.size.width - 32))
 
-                    librariesBar
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        header
+                        librariesBar
 
-                    if !model.resumeItems.isEmpty {
-                        HomeSection(title: "Continue Watching") {
-                            HomeRail(items: model.resumeItems) { item in
-                                AnyView(ItemDetailView(item: item).environmentObject(session))
-                            }
-                        }
-                    }
-
-                    if !model.recentMovies.isEmpty {
-                        HomeSection(title: "Recently Added • Movies") {
-                            HomeRail(items: model.recentMovies) { item in
-                                AnyView(ItemDetailView(item: item).environmentObject(session))
-                            }
-                        }
-                    }
-
-                    if !model.recentShows.isEmpty {
-                        HomeSection(title: "Recently Added • TV") {
-                            HomeRail(items: model.recentShows) { item in
-                                let type = (item.type ?? "").lowercased()
-                                if type == "series" {
-                                    return AnyView(SeriesDetailView(series: item).environmentObject(session))
+                        if !model.resumeItems.isEmpty {
+                            HomeSection(title: "Continue Watching", style: .card) {
+                                HomeRail(items: model.resumeItems) { item in
+                                    AnyView(ItemDetailView(item: item).environmentObject(session))
                                 }
-                                return AnyView(ItemDetailView(item: item).environmentObject(session))
                             }
                         }
-                    }
 
-                    // Actions
-                    HStack(spacing: 14) {
-                        Button(action: session.logout) {
-                            Text("Log Out")
-                                .font(BrockbusterTheme.Fonts.body.weight(.bold))
-                                .foregroundColor(BrockbusterTheme.brockDark)
+                        if !model.recentMovies.isEmpty {
+                            HomeSection(title: "Recently Added • Movies", style: .card) {
+                                HomeRail(items: model.recentMovies) { item in
+                                    AnyView(ItemDetailView(item: item).environmentObject(session))
+                                }
+                            }
                         }
-                        .buttonStyle(BrockbusterTheme.TicketButtonStyle())
 
-                        Button(action: session.resetServer) {
-                            Text("Change Server")
-                                .font(BrockbusterTheme.Fonts.body.weight(.bold))
-                                .foregroundColor(BrockbusterTheme.brockDark)
+                        if !model.recentShows.isEmpty {
+                            HomeSection(title: "Recently Added • TV", style: .card) {
+                                HomeRail(items: model.recentShows) { item in
+                                    let type = (item.type ?? "").lowercased()
+                                    if type == "series" {
+                                        return AnyView(SeriesDetailView(series: item).environmentObject(session))
+                                    }
+                                    return AnyView(ItemDetailView(item: item).environmentObject(session))
+                                }
+                            }
                         }
-                        .buttonStyle(BrockbusterTheme.TicketButtonStyle())
+
+                        // Actions
+                        HStack(spacing: 14) {
+                            Button(action: session.logout) {
+                                Text("Log Out")
+                                    .font(BrockbusterTheme.Fonts.body.weight(.bold))
+                                    .foregroundColor(BrockbusterTheme.brockDark)
+                            }
+                            .buttonStyle(BrockbusterTheme.TicketButtonStyle())
+
+                            Button(action: session.resetServer) {
+                                Text("Change Server")
+                                    .font(BrockbusterTheme.Fonts.body.weight(.bold))
+                                    .foregroundColor(BrockbusterTheme.brockDark)
+                            }
+                            .buttonStyle(BrockbusterTheme.TicketButtonStyle())
+                        }
+                        .padding(.top, 10)
+                        .padding(.bottom, 26)
                     }
-                    .padding(.top, 8)
-                    .padding(.bottom, 22)
+                    .frame(maxWidth: contentWidth, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 12)
+                    .padding(.horizontal, 16)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
             }
 
             if model.isPreloading {
@@ -177,7 +182,7 @@ struct HomeView: View {
                 }
             } else if session.libraries.isEmpty {
                 Text("No libraries found.")
-                    .foregroundColor(BrockbusterTheme.brockLight)
+                    .foregroundColor(colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -217,26 +222,18 @@ final class HomeFeedViewModel: ObservableObject {
         guard !hasBootstrapped else { return }
         hasBootstrapped = true
 
-        // Random slogan per load
         slogan = Self.randomSlogan()
 
-        // Step 1: Libraries
         preloadProgress = 0.08
         if session.isLoggedIn && session.libraries.isEmpty {
-            do {
-                try await session.fetchLibraries()
-            } catch {
-                // Non-fatal; the UI will show "No libraries found".
-            }
+            do { try await session.fetchLibraries() } catch { }
         }
         preloadProgress = 0.34
 
-        // Identify libraries (heuristic based on name)
         let libs = session.libraries
         let movieLib = libs.first(where: { $0.name.lowercased().contains("movie") })
         let tvLib = libs.first(where: { $0.name.lowercased().contains("tv") || $0.name.lowercased().contains("show") })
 
-        // Step 2: Continue watching (resume)
         do {
             resumeItems = try await session.fetchResumeItems(limit: 18)
         } catch {
@@ -244,7 +241,6 @@ final class HomeFeedViewModel: ObservableObject {
         }
         preloadProgress = 0.58
 
-        // Step 3: Recently Added (Movies)
         if let movieLib {
             do {
                 recentMovies = try await session.fetchItemsPage(
@@ -261,7 +257,6 @@ final class HomeFeedViewModel: ObservableObject {
         }
         preloadProgress = 0.78
 
-        // Step 4: Recently Added (Series)
         if let tvLib {
             do {
                 recentShows = try await session.fetchItemsPage(
@@ -301,6 +296,8 @@ final class HomeFeedViewModel: ObservableObject {
 }
 
 // MARK: - Components
+
+private enum SectionStyle { case plain, card }
 
 private struct LibraryChip: View {
     let title: String
@@ -361,6 +358,7 @@ private struct LibraryChip: View {
 
 private struct HomeSection<Content: View>: View {
     let title: String
+    var style: SectionStyle = .plain
     @ViewBuilder var content: () -> Content
 
     @Environment(\.colorScheme) private var colorScheme
@@ -370,9 +368,38 @@ private struct HomeSection<Content: View>: View {
             Text(title)
                 .font(BrockbusterTheme.Fonts.title)
                 .foregroundColor(colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark)
+
             content()
         }
         .padding(.top, 6)
+        .modifier(SectionSurface(style: style))
+    }
+}
+
+private struct SectionSurface: ViewModifier {
+    let style: SectionStyle
+    @Environment(\.colorScheme) private var colorScheme
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        switch style {
+        case .plain:
+            content
+        case .card:
+            content
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(colorScheme == .dark ? .white.opacity(0.07) : .white.opacity(0.75))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(
+                            colorScheme == .dark ? .white.opacity(0.10) : BrockbusterTheme.brockBlue.opacity(0.20),
+                            lineWidth: 1
+                        )
+                )
+        }
     }
 }
 
@@ -398,7 +425,15 @@ private struct HomeRail: View {
 
 private struct HomePosterCard: View {
     @EnvironmentObject private var session: SessionStore
+    @Environment(\.horizontalSizeClass) private var hSize
     let item: JellyfinClient.LibraryItem
+
+    private var cardSize: (w: CGFloat, h: CGFloat) {
+        if hSize == .regular {
+            return (w: 180, h: 260)
+        }
+        return (w: 140, h: 200)
+    }
 
     private var isEpisode: Bool {
         (item.type ?? "").lowercased() == "episode"
@@ -474,7 +509,7 @@ private struct HomePosterCard: View {
                 }
                 .padding(8)
             }
-            .frame(width: 140, height: 200)
+            .frame(width: cardSize.w, height: cardSize.h)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -553,3 +588,4 @@ private struct WelcomePreloadOverlay: View {
         }
     }
 }
+

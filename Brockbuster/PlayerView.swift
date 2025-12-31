@@ -53,13 +53,19 @@ struct PlayerView: View {
         ZStack(alignment: .top) {
             PlayerViewControllerRepresentable(
                 url: currentURL,
+                onUserInteraction: {
+                    // Re-show the metadata overlay whenever the user interacts with the player UI.
+                    showOverlayNow()
+                },
                 onPlaybackFailed: { err in
                     Task { await handlePlaybackFailure(err) }
                 }
             )
             .ignoresSafeArea()
             .contentShape(Rectangle())
-            .onTapGesture { toggleOverlay() }
+            // NOTE: AVPlayerViewController often consumes taps; the UIKit gesture inside the
+            // representable is the primary mechanism for restoring the overlay.
+            .onTapGesture { showOverlayNow() }
 
             if showOverlay {
                 overlay
@@ -154,14 +160,18 @@ struct PlayerView: View {
     }
 
     private func toggleOverlay() {
+        // Kept for potential future use. The current UX preference is:
+        // - user interaction should always show the overlay
+        // - overlay auto-hides after a delay
+        showOverlayNow()
+    }
+
+    private func showOverlayNow() {
+        overlayHideTask?.cancel()
         withAnimation(.easeInOut(duration: 0.18)) {
-            showOverlay.toggle()
+            showOverlay = true
         }
-        if showOverlay {
-            scheduleOverlayAutoHide()
-        } else {
-            overlayHideTask?.cancel()
-        }
+        scheduleOverlayAutoHide()
     }
 
     private func scheduleOverlayAutoHide() {
@@ -204,10 +214,11 @@ struct PlayerView: View {
 
 private struct PlayerViewControllerRepresentable: UIViewControllerRepresentable {
     let url: URL
+    let onUserInteraction: () -> Void
     let onPlaybackFailed: (Error?) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onPlaybackFailed: onPlaybackFailed)
+        Coordinator(onUserInteraction: onUserInteraction, onPlaybackFailed: onPlaybackFailed)
     }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
@@ -218,6 +229,12 @@ private struct PlayerViewControllerRepresentable: UIViewControllerRepresentable 
         controller.allowsPictureInPicturePlayback = true
         controller.entersFullScreenWhenPlaybackBegins = false
         controller.exitsFullScreenWhenPlaybackEnds = true
+
+        // Prevent the "white box" look while the player is preparing.
+        controller.view.backgroundColor = .black
+
+        // Capture taps even when AVPlayerViewController consumes touches.
+        context.coordinator.attachInteractionRecognizer(to: controller)
 
         context.coordinator.attach(to: player)
 
@@ -236,10 +253,13 @@ private struct PlayerViewControllerRepresentable: UIViewControllerRepresentable 
     }
 
     final class Coordinator: NSObject {
+        private let onUserInteraction: () -> Void
         private let onPlaybackFailed: (Error?) -> Void
         private var failedObserver: NSObjectProtocol?
+        private weak var controller: AVPlayerViewController?
 
-        init(onPlaybackFailed: @escaping (Error?) -> Void) {
+        init(onUserInteraction: @escaping () -> Void, onPlaybackFailed: @escaping (Error?) -> Void) {
+            self.onUserInteraction = onUserInteraction
             self.onPlaybackFailed = onPlaybackFailed
         }
 
@@ -266,6 +286,24 @@ private struct PlayerViewControllerRepresentable: UIViewControllerRepresentable 
                     self.onPlaybackFailed(err)
                 }
             }
+        }
+
+        func attachInteractionRecognizer(to controller: AVPlayerViewController) {
+            self.controller = controller
+
+            let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+            tap.cancelsTouchesInView = false
+
+            // Prefer contentOverlayView if available so we don't interfere with the player's own gestures.
+            if let overlay = controller.contentOverlayView {
+                overlay.addGestureRecognizer(tap)
+            } else {
+                controller.view.addGestureRecognizer(tap)
+            }
+        }
+
+        @objc private func handleTap() {
+            onUserInteraction()
         }
     }
 }

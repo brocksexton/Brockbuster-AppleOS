@@ -21,8 +21,7 @@ struct SeriesDetailView: View {
     @State private var isLoadingEpisodes = false
     @State private var errorMessage: String?
     
-    @State private var showPlayer = false
-    @State private var playerURL: URL?
+    @State private var playerSheet: PresentedPlayerURL?
 
     @State private var episodeQuery = ""
 
@@ -57,16 +56,14 @@ struct SeriesDetailView: View {
         .navigationTitle(series.name ?? "Show")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
-        .sheet(isPresented: $showPlayer) {
-            if let url = playerURL {
-                PlayerView(
-                    itemId: primaryEpisode?.id ?? series.id,
-                    url: url,
-                    title: details?.name ?? series.name ?? "",
-                    subtitle: primaryActionSubtitle,
-                    posterURL: session.itemImageURL(for: series, maxWidth: 700)
-                )
-            }
+        .sheet(item: $playerSheet) { sheet in
+            PlayerView(
+                itemId: primaryEpisode?.id ?? series.id,
+                url: sheet.url,
+                title: details?.name ?? series.name ?? "",
+                subtitle: primaryActionSubtitle,
+                posterURL: session.itemImageURL(for: series, maxWidth: 700)
+            )
         }
     }
 
@@ -370,13 +367,19 @@ private func playPrimary() async {
         guard !isLoadingEpisodes else { return }
         do {
             let url = try await session.streamURL(for: episode.id)
-            playerURL = url
-            primaryActionSubtitle = episodeSubtitle(for: episode)
-            showPlayer = true
+            await MainActor.run {
+                primaryActionSubtitle = episodeSubtitle(for: episode)
+                playerSheet = PresentedPlayerURL(url: url)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+private struct PresentedPlayerURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
 }
 
 private struct SeasonPill: View {

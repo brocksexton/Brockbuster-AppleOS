@@ -13,8 +13,7 @@ struct CollectionDetailView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
 
-    @State private var showPlayer: Bool = false
-    @State private var playerURL: URL?
+    @State private var playerSheet: PresentedPlayerURL?
     @State private var playbackTitle: String = ""
     @State private var playbackSubtitle: String? = nil
 
@@ -70,16 +69,14 @@ struct CollectionDetailView: View {
                 await loadItems()
             }
         }
-        .sheet(isPresented: $showPlayer) {
-            if let url = playerURL {
-                PlayerView(
-                    itemId: collection.id,
-                    url: url,
-                    title: playbackTitle,
-                    subtitle: playbackSubtitle,
-                    posterURL: session.itemImageURL(for: collection, maxWidth: 700)
-                )
-            }
+        .sheet(item: $playerSheet) { sheet in
+            PlayerView(
+                itemId: collection.id,
+                url: sheet.url,
+                title: playbackTitle,
+                subtitle: playbackSubtitle,
+                posterURL: session.itemImageURL(for: collection, maxWidth: 700)
+            )
         }
     }
 
@@ -318,8 +315,7 @@ struct CollectionDetailView: View {
             let url = try await session.streamURL(for: targetId)
 
             await MainActor.run {
-                self.playerURL = url
-                self.showPlayer = true
+                self.playerSheet = PresentedPlayerURL(url: url)
             }
         } catch {
             await MainActor.run { self.errorMessage = error.localizedDescription }
@@ -334,4 +330,9 @@ struct CollectionDetailView: View {
         if se.isEmpty { return ep.name }
         return "\(se) • \(ep.name)"
     }
+}
+
+private struct PresentedPlayerURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
 }

@@ -16,9 +16,8 @@ struct ItemDetailView: View {
     @State private var errorMessage: String?
     @State private var people: [JellyfinClient.Person] = []
     @State private var playbackSubtitle: String = ""
-    // State for presenting the video player
-    @State private var showPlayer: Bool = false
-    @State private var playerURL: URL?
+    // State for presenting the video player (sheet is driven by a non-nil URL to avoid blank/white sheets)
+    @State private var playerSheet: PresentedPlayerURL?
 
     var body: some View {
         ZStack {
@@ -194,16 +193,14 @@ if !cast.isEmpty {
             }
         }
         // Present the video player when a URL is available
-        .sheet(isPresented: $showPlayer) {
-            if let url = playerURL {
-                PlayerView(
-                    itemId: item.id,
-                    url: url,
-                    title: detail?.name ?? item.name,
-                    subtitle: playbackSubtitle,
-                    posterURL: session.itemImageURL(for: item, maxWidth: 700)
-                )
-            }
+        .sheet(item: $playerSheet) { sheet in
+            PlayerView(
+                itemId: item.id,
+                url: sheet.url,
+                title: detail?.name ?? item.name,
+                subtitle: playbackSubtitle,
+                posterURL: session.itemImageURL(for: item, maxWidth: 700)
+            )
         }
     }
 
@@ -250,9 +247,10 @@ if !cast.isEmpty {
         Task {
             do {
                 let url = try await session.streamURL(for: item.id)
-                playerURL = url
-                playbackSubtitle = buildPlaybackSubtitle()
-                showPlayer = true
+                await MainActor.run {
+                    playbackSubtitle = buildPlaybackSubtitle()
+                    playerSheet = PresentedPlayerURL(url: url)
+                }
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -283,15 +281,21 @@ if !cast.isEmpty {
         Task {
             do {
                 let url = try await session.streamURL(for: item.id)
-                playerURL = url
-                playbackSubtitle = buildPlaybackSubtitle()
-                showPlayer = true
+                await MainActor.run {
+                    playbackSubtitle = buildPlaybackSubtitle()
+                    playerSheet = PresentedPlayerURL(url: url)
+                }
             } catch {
                 errorMessage = error.localizedDescription
             }
             isLoading = false
         }
     }
+}
+
+private struct PresentedPlayerURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
 }
 
 /// A small pill-shaped label used to display metadata values like year,

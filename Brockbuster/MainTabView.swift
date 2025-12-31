@@ -88,37 +88,285 @@ struct FriendsTab: View {
     }
 }
 
-/// Placeholder view for the Server Health tab.  This tab will show status
 /// information about the Jellyfin server such as CPU usage, memory and active
-/// streams.  The view currently displays a placeholder message.
+/// streams.
 struct ServerHealthTab: View {
+    @EnvironmentObject private var session: SessionStore
+    @StateObject private var vm = ServerHealthViewModel()
+
+    private var columns: [GridItem] {
+        // Responsive: 1 column compact, 2 columns on larger screens
+        [GridItem(.flexible()), GridItem(.flexible())]
+    }
+
     var body: some View {
         ZStack {
-            LinearGradient(gradient: Gradient(colors: [BrockbusterTheme.brockDark.opacity(0.6), BrockbusterTheme.brockBlue.opacity(0.6)]), startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea()
-            VStack(spacing: 16) {
-                Image(systemName: "waveform.path.ecg")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 80, height: 80)
-                    .foregroundColor(BrockbusterTheme.brockGold)
-                Text("Server Health Coming Soon")
-                    .font(BrockbusterTheme.Fonts.title)
-                    .foregroundColor(BrockbusterTheme.brockLight)
-                Text("Monitor your server's status and performance here.")
-                    .font(BrockbusterTheme.Fonts.body)
-                    .foregroundColor(BrockbusterTheme.brockLight.opacity(0.8))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    BrockbusterTheme.brockDark.opacity(0.6),
+                    BrockbusterTheme.brockBlue.opacity(0.6)
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 14) {
+                    header
+
+                    if let error = vm.errorMessage {
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label("Unable to load server health", systemImage: "exclamationmark.triangle.fill")
+                                    .font(BrockbusterTheme.Fonts.title)
+                                    .foregroundColor(BrockbusterTheme.brockGold)
+
+                                Text(error)
+                                    .font(BrockbusterTheme.Fonts.body)
+                                    .foregroundColor(BrockbusterTheme.brockLight.opacity(0.9))
+                            }
+                        }
+                    }
+
+                    if vm.isLoading {
+                        GlassCard {
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                Text("Loading health data…")
+                                    .font(BrockbusterTheme.Fonts.body)
+                                    .foregroundColor(BrockbusterTheme.brockLight)
+                            }
+                        }
+                    }
+
+                    if let health = vm.health, health.ok {
+                        badgesSection(health)
+                        checksSection(health)
+                        storageSection(health)
+                        environmentSection(health)
+                        loadSection(health)
+                    }
+
+                    Spacer(minLength: 20)
+                }
+                .padding()
             }
-            .padding()
+            .refreshable {
+                await vm.refresh(
+                    jellyfinToken: session.accessToken,
+                    jellyfinUserId: session.currentUser?.id
+                )
+            }
         }
-        .navigationTitle("Server")
+        .navigationTitle("Server Health")
         #if !os(macOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    Task {
+                        await vm.refresh(
+                            jellyfinToken: session.accessToken,
+                            jellyfinUserId: session.currentUser?.id
+                        )
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .accessibilityLabel("Refresh server health")
+            }
+        }
+        .task {
+            await vm.refresh(
+                jellyfinToken: session.accessToken,
+                jellyfinUserId: session.currentUser?.id
+            )
+        }
+    }
+
+    private var header: some View {
+        GlassCard {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(BrockbusterTheme.brockGold)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Brockbuster Server")
+                        .font(BrockbusterTheme.Fonts.title)
+                        .foregroundColor(BrockbusterTheme.brockLight)
+
+                    let last = BrockbusterFormat.isoToDisplay(vm.health?.generatedAt)
+                    Text("Last updated: \(last)")
+                        .font(.caption)
+                        .foregroundColor(BrockbusterTheme.brockLight.opacity(0.8))
+                }
+
+                Spacer()
+            }
+        }
+    }
+
+    private func badgesSection(_ health: BrockbusterAPI.HealthV2Response) -> some View {
+        let badges = health.status?.badges ?? []
+
+        return Group {
+            if !badges.isEmpty {
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Status")
+                            .font(BrockbusterTheme.Fonts.title)
+                            .foregroundColor(BrockbusterTheme.brockLight)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(badges) { badge in
+                                HStack(spacing: 10) {
+                                    let sev = HealthSeverity(badge.type)
+                                    SeverityPill(severity: sev)
+                                    Text(badge.label ?? "—")
+                                        .font(BrockbusterTheme.Fonts.body)
+                                        .foregroundColor(BrockbusterTheme.brockLight)
+                                    Spacer()
+                                }
+                            }
+                        }
+
+                        if let banner = health.status?.banner, !banner.isEmpty {
+                            Text(banner)
+                                .font(.caption)
+                                .foregroundColor(BrockbusterTheme.brockGold)
+                                .padding(.top, 6)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func checksSection(_ health: BrockbusterAPI.HealthV2Response) -> some View {
+        GlassCard {
+            HStack {
+                Text("Jellyfin API")
+                    .font(BrockbusterTheme.Fonts.title)
+                    .foregroundColor(BrockbusterTheme.brockLight)
+
+                Spacer()
+
+                let ok = health.checks?.jellyfinPublicInfoOk ?? false
+                Label(ok ? "OK" : "Down", systemImage: ok ? "checkmark.seal.fill" : "xmark.octagon.fill")
+                    .font(BrockbusterTheme.Fonts.body)
+                    .foregroundColor(ok ? BrockbusterTheme.brockGold : BrockbusterTheme.brockLight.opacity(0.85))
+            }
+        }
+    }
+
+    private func storageSection(_ health: BrockbusterAPI.HealthV2Response) -> some View {
+        let drives = health.storage?.drives ?? []
+
+        return GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Storage")
+                    .font(BrockbusterTheme.Fonts.title)
+                    .foregroundColor(BrockbusterTheme.brockLight)
+
+                if drives.isEmpty {
+                    Text("No drives reported by API.")
+                        .font(BrockbusterTheme.Fonts.body)
+                        .foregroundColor(BrockbusterTheme.brockLight.opacity(0.85))
+                } else {
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(drives) { d in
+                            driveCard(d)
+                        }
+                    }
+                }
+
+                if let t = health.storage?.thresholds {
+                    let warn = t.warningFreePercent ?? 20
+                    let crit = t.criticalFreePercent ?? 10
+                    Text("Thresholds: Critical ≤ \(String(format: "%.0f", crit))% free • Warning ≤ \(String(format: "%.0f", warn))% free")
+                        .font(.caption)
+                        .foregroundColor(BrockbusterTheme.brockLight.opacity(0.7))
+                        .padding(.top, 6)
+                }
+            }
+        }
+    }
+
+    private func driveCard(_ d: BrockbusterAPI.HealthV2Response.StorageBlock.Drive) -> some View {
+        let sev = HealthSeverity(d.severity)
+        let used = BrockbusterFormat.bytes(d.usedBytes)
+        let free = BrockbusterFormat.bytes(d.freeBytes)
+        let total = BrockbusterFormat.bytes(d.totalBytes)
+        let freePct = d.freePercent.map { String(format: "%.1f%% free", $0) } ?? "—"
+
+        return GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(d.label ?? (d.mount ?? "Drive"))
+                            .font(BrockbusterTheme.Fonts.body)
+                            .foregroundColor(BrockbusterTheme.brockLight)
+                            .lineLimit(2)
+
+                        Text("\(used) used • \(free) free • \(total) total")
+                            .font(.caption)
+                            .foregroundColor(BrockbusterTheme.brockLight.opacity(0.8))
+                            .lineLimit(1)
+
+                        Text(freePct)
+                            .font(.caption)
+                            .foregroundColor(BrockbusterTheme.brockLight.opacity(0.75))
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 6) {
+                        SeverityPill(severity: sev)
+                        RolePill(role: d.role)
+                    }
+                }
+
+                UsageBar(fraction: d.usedFraction)
+            }
+        }
+    }
+
+    private func environmentSection(_ health: BrockbusterAPI.HealthV2Response) -> some View {
+        // A3 v2 payload may not include env; show only if caller info exists as a placeholder
+        // If you add env later, wire it here. For now show caller as “Authenticated as”.
+        return Group {
+            if let caller = health.caller, (caller.userId != nil || caller.name != nil) {
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Session")
+                            .font(BrockbusterTheme.Fonts.title)
+                            .foregroundColor(BrockbusterTheme.brockLight)
+
+                        Text("Authenticated as: \(caller.name ?? "User")")
+                            .font(BrockbusterTheme.Fonts.body)
+                            .foregroundColor(BrockbusterTheme.brockLight)
+
+                        if let id = caller.userId, !id.isEmpty {
+                            Text("User ID: \(id)")
+                                .font(.caption)
+                                .foregroundColor(BrockbusterTheme.brockLight.opacity(0.8))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func loadSection(_ health: BrockbusterAPI.HealthV2Response) -> some View {
+        // A3 v2 sample doesn’t include load, so we skip unless you add it later.
+        // If you do add it to v2, wire it similarly to your prior view.
+        EmptyView()
     }
 }
+
 
 /// Placeholder view for the Social tab.  This tab will eventually allow users to
 /// share reviews and thoughts about media with friends and family.  Currently it
@@ -160,3 +408,4 @@ struct MainTabView_Previews: PreviewProvider {
     }
 }
 #endif
+

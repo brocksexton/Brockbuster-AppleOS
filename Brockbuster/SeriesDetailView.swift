@@ -16,6 +16,9 @@ struct SeriesDetailView: View {
     @State private var isLoading = true
     @State private var isLoadingEpisodes = false
     @State private var errorMessage: String?
+    
+    @State private var showPlayer = false
+    @State private var playerURL: URL?
 
     @State private var episodeQuery = ""
 
@@ -50,6 +53,15 @@ struct SeriesDetailView: View {
         .navigationTitle(series.name ?? "Show")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .sheet(isPresented: $showPlayer) {
+            if let url = playerURL {
+                PlayerView(
+                    url: url,
+                    title: details?.name ?? series.name ?? "",
+                    posterURL: session.itemImageURL(for: series, maxWidth: 700)
+                )
+            }
+        }
     }
 
     // MARK: - UI
@@ -166,7 +178,7 @@ struct SeriesDetailView: View {
                             ItemDetailView(item: ep)
                                 .environmentObject(session)
                         } label: {
-                            EpisodeRow(episode: ep)
+                            EpisodeRow(episode: ep, seriesFallback: series) { await play(episode: ep) }
                         }
                         .buttonStyle(.plain)
                     }
@@ -238,6 +250,17 @@ struct SeriesDetailView: View {
         }
         return season.name
     }
+    
+    private func play(episode: JellyfinClient.LibraryItem) async {
+        guard !isLoadingEpisodes else { return }
+        do {
+            let url = try await session.streamURL(for: episode.id)
+            playerURL = url
+            showPlayer = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 private struct SeasonPill: View {
@@ -298,11 +321,13 @@ private struct InfoPill: View {
 
 private struct EpisodeRow: View {
     let episode: JellyfinClient.LibraryItem
+    let seriesFallback: JellyfinClient.LibraryItem?
+    var onPlay: (() async -> Void)? = nil
 
     var body: some View {
         GlassCard {
             HStack(spacing: 12) {
-                PosterImage(item: episode, kind: .thumb)
+                PosterImage(item: episode, kind: .thumb, fallbackItem: seriesFallback)
                     .frame(width: 110, height: 62)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(
@@ -324,6 +349,18 @@ private struct EpisodeRow: View {
                     }
                 }
                 Spacer(minLength: 0)
+
+                if let onPlay {
+                    Button(action: { Task { await onPlay() } }) {
+                        Image(systemName: "play.fill")
+                            .font(.body.weight(.bold))
+                            .foregroundStyle(BrockbusterTheme.ticketYellow)
+                            .padding(8)
+                            .background(.white.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
@@ -350,6 +387,7 @@ private struct PosterImage: View {
     @EnvironmentObject private var session: SessionStore
     let item: JellyfinClient.LibraryItem
     let kind: PosterKind
+    var fallbackItem: JellyfinClient.LibraryItem? = nil
 
     var body: some View {
         Group {
@@ -390,15 +428,13 @@ private struct PosterImage: View {
         case .poster:
             return session.itemImageURL(for: item, maxWidth: 720)
         case .thumb:
-            // Episodes usually have a Primary. If not, fall back to series poster.
-            // Episodes often have a Primary image representing the frame thumbnail.
-            // Fall back to the series poster if none is available.
+            // Episodes usually have a Primary image (frame thumbnail). If not, fall back to the series poster when provided.
             if let url = session.itemImageURL(for: item, maxWidth: 420) {
                 return url
             }
-            // If the item has no own art, fall back to a placeholder.
-            // (We intentionally do not attempt to walk series/parent relationships here
-            // because `LibraryItem` does not include those fields in this client model.)
+            if let fallback = fallbackItem, let url = session.itemImageURL(for: fallback, maxWidth: 420) {
+                return url
+            }
             return nil
         }
     }

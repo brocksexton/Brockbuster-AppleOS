@@ -42,7 +42,9 @@ struct AutoSignInView: View {
                             .foregroundColor(BrockbusterTheme.brockLight)
 
                         if let errorMessage {
-                            ErrorPill(message: errorMessage)
+                            Text(errorMessage)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.red)
                                 .padding(.horizontal)
                         }
 
@@ -109,32 +111,5 @@ struct AutoSignInView: View {
                 }
             }
         }
-    }
-}
-
-// MARK: - Local UI Components
-
-/// Lightweight error capsule used during auto sign-in.
-/// Defined locally to keep AutoSignInView self-contained.
-private struct ErrorPill: View {
-    let message: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-            Text(message)
-                .font(.footnote)
-        }
-        .foregroundColor(.white)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            Capsule(style: .continuous)
-                .fill(Color.red.opacity(0.55))
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                )
-        )
     }
 }

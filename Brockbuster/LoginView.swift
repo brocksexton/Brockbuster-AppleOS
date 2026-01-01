@@ -19,12 +19,11 @@ struct LoginView: View {
     @State private var serverReachable: Bool? = nil
     // Controls display of the connectivity info alert.
     @State private var showInfoAlert: Bool = false
+    @State private var logoPulse: Bool = false
 
     var body: some View {
         ZStack {
-            // Vibrant blurred background using Brockbuster colours
-            LinearGradient(gradient: Gradient(colors: [BrockbusterTheme.brockDark.opacity(0.6), BrockbusterTheme.brockBlue.opacity(0.6)]), startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea()
+            BrockbusterLoginBackdrop(pulse: $logoPulse)
             // Content stack
             VStack(spacing: 32) {
                 Spacer()
@@ -32,10 +31,19 @@ struct LoginView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 160, height: 160)
-                    .shadow(radius: 20)
-                Text("Sign In")
-                    .font(BrockbusterTheme.Fonts.title)
-                    .foregroundColor(BrockbusterTheme.brockLight)
+                    .shadow(color: .black.opacity(0.35), radius: 22, x: 0, y: 12)
+                    .scaleEffect(logoPulse ? 1.03 : 0.98)
+                    .animation(.spring(response: 0.8, dampingFraction: 0.7), value: logoPulse)
+
+                VStack(spacing: 6) {
+                    Text("Welcome back")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .foregroundColor(BrockbusterTheme.brockLight)
+
+                    Text("Grab your ticket. Let's roll.")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(BrockbusterTheme.brockLight.opacity(0.82))
+                }
                 // Connectivity indicator row
                 HStack(spacing: 8) {
                     // Coloured dot representing server health
@@ -84,7 +92,7 @@ struct LoginView: View {
                             .font(.footnote)
                             .tint(BrockbusterTheme.brockGold)
                         Button(action: login) {
-                            Text("Login")
+                            Text("Enter Brockbuster")
                                 .font(BrockbusterTheme.Fonts.body.weight(.bold))
                         }
                         .buttonStyle(BrockbusterTheme.TicketButtonStyle())
@@ -125,6 +133,12 @@ struct LoginView: View {
                 let reachable = await session.pingServer()
                 serverReachable = reachable
             }
+
+            // Subtle, repeating pulse to keep the login screen feeling alive.
+            logoPulse = false
+            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+                logoPulse = true
+            }
         }
     }
 
@@ -153,5 +167,46 @@ struct LoginView: View {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+}
+
+// MARK: - Premium login backdrop
+
+private struct BrockbusterLoginBackdrop: View {
+    @Binding var pulse: Bool
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    BrockbusterTheme.brockDark.opacity(0.72),
+                    BrockbusterTheme.brockBlue.opacity(0.62)
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            // Soft "neon" blobs for depth (kept subtle to avoid looking busy)
+            Circle()
+                .fill(BrockbusterTheme.brockGold.opacity(0.14))
+                .frame(width: 420, height: 420)
+                .blur(radius: 18)
+                .offset(x: pulse ? 120 : 80, y: pulse ? -240 : -200)
+
+            Circle()
+                .fill(BrockbusterTheme.brockBlue.opacity(0.22))
+                .frame(width: 520, height: 520)
+                .blur(radius: 22)
+                .offset(x: pulse ? -160 : -120, y: pulse ? 260 : 220)
+
+            // Subtle vignette to focus attention on the card
+            RadialGradient(
+                gradient: Gradient(colors: [Color.black.opacity(0.0), Color.black.opacity(0.55)]),
+                center: .center,
+                startRadius: 80,
+                endRadius: 520
+            )
+        }
+        .ignoresSafeArea()
     }
 }

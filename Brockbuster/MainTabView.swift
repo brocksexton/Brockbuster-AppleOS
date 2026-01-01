@@ -19,11 +19,11 @@ struct MainTabView: View {
             }
 
             NavigationStack {
-                FriendsView()
+                MyBrockbusterView()
             }
             .tabItem {
-                Image(systemName: "person.2.fill")
-                Text("Friends")
+                Image(systemName: "sparkles")
+                Text("My")
             }
 
             NavigationStack {

@@ -341,6 +341,21 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    /// Fetch a simple watch history list (recently played items).
+    func fetchWatchHistory(limit: Int = 50) async throws -> [JellyfinClient.LibraryItem] {
+        guard let userId = currentUser?.id else { return [] }
+        return try await withCheckedThrowingContinuation { continuation in
+            client.fetchWatchHistory(userId: userId, limit: limit) { result in
+                switch result {
+                case .success(let items):
+                    continuation.resume(returning: items)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Fetch the child items of a given library item (e.g. seasons of a series,
     /// episodes of a season, or contents of a collection).  Uses the same
     /// underlying API as `fetchItems(for: LibraryView)`.  Does not cache by

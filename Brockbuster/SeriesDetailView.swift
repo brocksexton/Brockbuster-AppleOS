@@ -25,6 +25,9 @@ struct SeriesDetailView: View {
 
     @State private var episodeQuery = ""
 
+    /// Tracks per-season watch progress so we can add UI indicators in the season picker.
+    @State private var seasonWatchStates: [String: SeasonWatchState] = [:]
+
     private var filteredEpisodes: [JellyfinClient.LibraryItem] {
         let q = episodeQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return episodes }
@@ -56,7 +59,9 @@ struct SeriesDetailView: View {
         .navigationTitle(series.name ?? "Show")
         .bbNavigationTitleInline()
         .task { await load() }
-        .sheet(item: $playerSheet) { sheet in
+        .sheet(item: $playerSheet, onDismiss: {
+            Task { await refreshWatchStateAfterPlayback() }
+        }) { sheet in
             PlayerView(
                 itemId: primaryEpisode?.id ?? series.id,
                 url: sheet.url,
@@ -184,9 +189,11 @@ private var primaryPlayRow: some View {
                 HStack(spacing: 10) {
                     ForEach(seasons, id: \.id) { season in
                         let isSelected = season.id == selectedSeason?.id
+                        let watchState = seasonWatchStates[season.id] ?? .none
                         SeasonPill(
                             title: seasonDisplayName(season),
                             isSelected: isSelected,
+                            watchState: watchState,
                             action: { Task { await selectSeason(season) } }
                         )
                         .accessibilityLabel(seasonDisplayName(season))
@@ -273,6 +280,10 @@ private var primaryPlayRow: some View {
             seasons = seasonsResult
                 .filter { $0.type?.lowercased() == "season" || $0.name != nil }
 
+            // Pre-compute watch progress indicators for the season picker.
+            // This runs in the background and will update the UI as results come in.
+            Task { await computeSeasonWatchStatesIfNeeded() }
+
             // Resolve primary play action (Resume / Next Episode / Play)
             do {
                 if let nextUp = try await session.fetchNextUpEpisode(seriesId: series.id) {
@@ -330,10 +341,89 @@ private var primaryPlayRow: some View {
                 sortOrder: "Ascending"
             )
             .filter { $0.type?.lowercased() == "episode" }
+
+            // Update season watch state based on the newly loaded episodes.
+            updateSeasonWatchState(seasonId: season.id, episodes: episodes)
         } catch {
             episodes = []
             errorMessage = "Unable to load episodes. \(error.localizedDescription)"
         }
+    }
+
+    /// Derive a season's watch state from episode `UserData`.
+    private func updateSeasonWatchState(seasonId: String, episodes: [JellyfinClient.LibraryItem]) {
+        guard !episodes.isEmpty else {
+            seasonWatchStates[seasonId] = .none
+            return
+        }
+
+        let playedCount = episodes.filter { $0.userData?.played == true }.count
+        let inProgressCount = episodes.filter {
+            let played = $0.userData?.played ?? false
+            let pos = $0.userData?.playbackPositionTicks ?? 0
+            return !played && pos > 0
+        }.count
+
+        if playedCount == episodes.count {
+            seasonWatchStates[seasonId] = .complete
+        } else if playedCount > 0 || inProgressCount > 0 {
+            seasonWatchStates[seasonId] = .partial
+        } else {
+            seasonWatchStates[seasonId] = .none
+        }
+    }
+
+    /// Best-effort background computation of season watch indicators.
+    /// This intentionally avoids re-fetching seasons that have already been computed.
+    private func computeSeasonWatchStatesIfNeeded() async {
+        // If the view is still loading, we may not have seasons yet.
+        guard !seasons.isEmpty else { return }
+
+        for season in seasons {
+            if seasonWatchStates[season.id] != nil { continue }
+
+            do {
+                let eps = try await session.fetchItems(
+                    for: season,
+                    includeItemTypes: ["Episode"],
+                    sortBy: ["ParentIndexNumber", "IndexNumber", "SortName"],
+                    sortOrder: "Ascending"
+                )
+                .filter { $0.type?.lowercased() == "episode" }
+
+                updateSeasonWatchState(seasonId: season.id, episodes: eps)
+            } catch {
+                // Non-fatal: show no indicator for this season.
+                seasonWatchStates[season.id] = .none
+            }
+        }
+    }
+
+    /// After playback, refresh the current season and Next Up to update watched indicators.
+    private func refreshWatchStateAfterPlayback() async {
+        // Refresh Next Up / Resume button label.
+        do {
+            if let nextUp = try await session.fetchNextUpEpisode(seriesId: series.id) {
+                primaryEpisode = nextUp
+                let pos = nextUp.userData?.playbackPositionTicks ?? 0
+                let played = nextUp.userData?.played ?? false
+                if pos > 0 && !played {
+                    primaryActionTitle = "Resume"
+                } else {
+                    primaryActionTitle = "Next Episode"
+                }
+                primaryActionSubtitle = episodeSubtitle(for: nextUp)
+            }
+        } catch {
+            // Ignore; player dismissal should not surface a new error state.
+        }
+
+        if let season = selectedSeason {
+            await selectSeason(season)
+        }
+
+        // Fill in missing season states opportunistically.
+        await computeSeasonWatchStatesIfNeeded()
     }
 
 
@@ -387,25 +477,53 @@ private struct PresentedPlayerURL: Identifiable {
     var id: String { url.absoluteString }
 }
 
+/// Per-season watch progress.
+private enum SeasonWatchState: Equatable {
+    case none
+    case partial
+    case complete
+}
+
 private struct SeasonPill: View {
     let title: String
     let isSelected: Bool
+    let watchState: SeasonWatchState
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isSelected ? .black : BrockbusterTheme.textPrimary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(backgroundStyle)
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule().stroke(.white.opacity(isSelected ? 0 : 0.12), lineWidth: 1)
-                )
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isSelected ? .black : BrockbusterTheme.textPrimary)
+
+                if let symbol = watchSymbol {
+                    Image(systemName: symbol)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(isSelected ? .black.opacity(0.85) : BrockbusterTheme.ticketYellow)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(backgroundStyle)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule().stroke(.white.opacity(isSelected ? 0 : 0.12), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
+    }
+
+    private var watchSymbol: String? {
+        switch watchState {
+        case .none:
+            return nil
+        case .partial:
+            return "circle.dashed"
+        case .complete:
+            return "checkmark.circle.fill"
+        }
     }
 
     private var backgroundStyle: some ShapeStyle {
@@ -450,56 +568,141 @@ private struct EpisodeRow: View {
 
     var body: some View {
         GlassCard {
-            HStack(spacing: 12) {
-                PosterImage(item: episode, kind: .thumb, fallbackItem: seriesFallback)
-                    .frame(width: 110, height: 62)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(.white.opacity(0.10), lineWidth: 1)
-                    )
+            VStack(alignment: .leading, spacing: 10) {
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(episodeTitle(episode))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(BrockbusterTheme.textPrimary)
-                        .lineLimit(2)
+                HStack(spacing: 12) {
+                    // Thumbnail + progress bar under it
+                    VStack(alignment: .leading, spacing: 6) {
+                        PosterImage(item: episode, kind: .thumb, fallbackItem: seriesFallback)
+                            .frame(width: 110, height: 62)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(.white.opacity(0.10), lineWidth: 1)
+                            )
 
-                    if let overview = episode.overview, !overview.isEmpty {
-                        Text(overview)
-                            .font(.caption)
-                            .foregroundStyle(BrockbusterTheme.textSecondary)
+                        if let progress = watchProgressFraction {
+                            EpisodeProgressBar(progress: progress)
+                                .frame(width: 110)
+                                .accessibilityLabel("Playback progress")
+                                .accessibilityValue("\(Int(progress * 100)) percent")
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(episodeTitle(episode))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(BrockbusterTheme.textPrimary)
                             .lineLimit(2)
-                    }
-                }
-                Spacer(minLength: 0)
 
-                if let onPlay {
-                    Button(action: { Task { await onPlay() } }) {
-                        Image(systemName: "play.fill")
-                            .font(.body.weight(.bold))
-                            .foregroundStyle(BrockbusterTheme.ticketYellow)
-                            .padding(8)
-                            .background(.white.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        if let overview = episode.overview, !overview.isEmpty {
+                            Text(overview)
+                                .font(.caption)
+                                .foregroundStyle(BrockbusterTheme.textSecondary)
+                                .lineLimit(2)
+                        }
                     }
-                    .buttonStyle(.plain)
-                }
 
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.55))
+                    Spacer(minLength: 0)
+
+                    // Watched / in-progress indicator (per-user)
+                    if let indicator = watchIndicatorSymbol {
+                        Image(systemName: indicator)
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(watchIndicatorStyle)
+                            .accessibilityLabel(watchIndicatorA11yLabel)
+                    }
+
+                    if let onPlay {
+                        Button(action: { Task { await onPlay() } }) {
+                            Image(systemName: "play.fill")
+                                .font(.body.weight(.bold))
+                                .foregroundStyle(BrockbusterTheme.ticketYellow)
+                                .padding(8)
+                                .background(.white.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
             }
         }
+    }
+
+    // MARK: - Watch State + Progress
+
+    /// Returns 0.0...1.0 for in-progress playback, or nil when we should not show a bar.
+    private var watchProgressFraction: Double? {
+        let played = episode.userData?.played ?? false
+        if played { return 1.0 }
+
+        let pos = Double(episode.userData?.playbackPositionTicks ?? 0)
+        guard pos > 0 else { return nil }
+
+        // runtimeTicks is the most reliable; if missing, hide the bar to avoid incorrect UI.
+        let runtime = Double(episode.runtimeTicks ?? 0)
+        guard runtime > 0 else { return nil }
+
+        let frac = pos / runtime
+        // Avoid rendering full bar unless actually marked played; cap at 0.995.
+        return max(0.0, min(frac, 0.995))
+    }
+
+    private var watchIndicatorSymbol: String? {
+        let played = episode.userData?.played ?? false
+        let pos = episode.userData?.playbackPositionTicks ?? 0
+        if played { return "checkmark.circle.fill" }
+        if pos > 0 { return "clock.fill" }
+        return nil
+    }
+
+    private var watchIndicatorStyle: some ShapeStyle {
+        let played = episode.userData?.played ?? false
+        return played ? BrockbusterTheme.ticketYellow : .white.opacity(0.70)
+    }
+
+    private var watchIndicatorA11yLabel: String {
+        let played = episode.userData?.played ?? false
+        let pos = episode.userData?.playbackPositionTicks ?? 0
+        if played { return "Watched" }
+        if pos > 0 { return "In progress" }
+        return ""
     }
 
     private func episodeTitle(_ ep: JellyfinClient.LibraryItem) -> String {
         if let i = ep.indexNumber {
             return "\(i). \(ep.name ?? "Episode")"
         }
-        return ep.name
+        return ep.name ?? "Episode"
     }
 }
+
+/// A slim, premium progress bar (no hard-coded colors; uses your theme tokens).
+private struct EpisodeProgressBar: View {
+    let progress: Double   // 0...1
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(.white.opacity(0.14))
+                    .frame(height: 4)
+
+                Capsule()
+                    .fill(BrockbusterTheme.ticketYellow.opacity(0.95))
+                    .frame(width: max(4, w * progress), height: 4)
+            }
+        }
+        .frame(height: 4)
+        .accessibilityHidden(true)
+    }
+}
+
 
 private enum PosterKind {
     case poster
@@ -541,8 +744,7 @@ private struct PosterImage: View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.white.opacity(0.08))
-            Image(systemName: kind == .poster ? "tv" : "film")
-                .font(.title3)
+            Image(systemName: "photo")
                 .foregroundStyle(.white.opacity(0.35))
         }
     }

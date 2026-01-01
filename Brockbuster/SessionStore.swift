@@ -481,6 +481,11 @@ final class SessionStore: ObservableObject {
     }
 
 
+    func itemImageURL(for item: JellyfinClient.LibraryItem, kind: String, maxWidth: Int? = nil) -> URL? {
+        return client.itemImageURL(for: item, kind: kind, maxWidth: maxWidth)
+    }
+
+
 
 /// Construct the URL for a person's primary image.
 func personImageURL(for person: JellyfinClient.Person, maxWidth: Int? = nil) -> URL? {
@@ -490,6 +495,11 @@ func personImageURL(for person: JellyfinClient.Person, maxWidth: Int? = nil) -> 
     /// Construct the URL for a detailed media item's image.  Returns nil if there is no image.
     func itemImageURL(for detail: JellyfinClient.ItemDetail, maxWidth: Int? = nil) -> URL? {
         return client.itemImageURL(for: detail, maxWidth: maxWidth)
+    }
+
+
+    func itemImageURL(for detail: JellyfinClient.ItemDetail, kind: String, maxWidth: Int? = nil) -> URL? {
+        return client.itemImageURL(for: detail, kind: kind, maxWidth: maxWidth)
     }
 
     /// Fetch detailed information for a specific item.  Must be called after the user has

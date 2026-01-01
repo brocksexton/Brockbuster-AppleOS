@@ -18,7 +18,11 @@ struct HomeView: View {
             background
 
             GeometryReader { geo in
+                #if os(tvOS)
+                let contentWidth = min(1400, max(0, geo.size.width - 120))
+                #else
                 let contentWidth = min(820, max(0, geo.size.width - 32))
+                #endif
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 18) {
@@ -342,11 +346,19 @@ private struct LibraryChip: View {
                         .foregroundColor(.white.opacity(0.65))
                 }
             }
+            #if os(tvOS)
+            .frame(width: 84, height: 58)
+            #else
             .frame(width: 54, height: 38)
+            #endif
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             Text(title)
+                #if os(tvOS)
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                #else
                 .font(BrockbusterTheme.Fonts.body.weight(.semibold))
+                #endif
                 .foregroundColor(colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark)
                 .lineLimit(1)
 
@@ -364,6 +376,9 @@ private struct LibraryChip: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(BrockbusterTheme.brockBlue.opacity(0.40), lineWidth: 1)
         )
+        #if os(tvOS)
+        .focusable(true)
+        #endif
     }
 }
 
@@ -430,6 +445,10 @@ private struct HomeRail: View {
                 }
             }
             .padding(.vertical, 2)
+            #if os(tvOS)
+            .focusSection()
+            .padding(.vertical, 8)
+            #endif
         }
     }
 }
@@ -440,10 +459,15 @@ private struct HomePosterCard: View {
     let item: JellyfinClient.LibraryItem
 
     private var cardSize: (w: CGFloat, h: CGFloat) {
+        #if os(tvOS)
+        // tvOS needs larger targets for comfortable focus navigation.
+        return (w: 260, h: 390)
+        #else
         if hSize == .regular {
             return (w: 180, h: 260)
         }
         return (w: 140, h: 200)
+        #endif
     }
 
     private var isEpisode: Bool {
@@ -526,6 +550,16 @@ private struct HomePosterCard: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(.white.opacity(0.10), lineWidth: 1)
             )
+            #if os(tvOS)
+            .focusable(true)
+            //.focusEffect(.automatic)
+            // tvOS will apply its own parallax/scale focus styling.
+            // Keep a subtle gold outline at all times for brand consistency.
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(BrockbusterTheme.brockGold.opacity(0.22), lineWidth: 2)
+            )
+            #endif
         }
     }
 }

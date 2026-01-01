@@ -476,8 +476,7 @@ final class JellyfinClient {
         }
     }
 
-
-/// Represents per-user playback data attached to items when requested via the `Fields=UserData` parameter.
+    /// Represents per-user playback data attached to items when requested via the `Fields=UserData` parameter.
 struct UserData: Decodable {
     let playbackPositionTicks: Int?
     let played: Bool?
@@ -552,6 +551,9 @@ struct UserData: Decodable {
         let genres: [String]?
         let taglines: [String]?
 
+        /// Per-user playback state (when requested via Fields=UserData)
+        let userData: UserData?
+
         enum CodingKeys: String, CodingKey {
             case id = "Id"
             case name = "Name"
@@ -563,8 +565,10 @@ struct UserData: Decodable {
             case primaryImageTag = "PrimaryImageTag"
             case genres = "Genres"
             case taglines = "Taglines"
+            case userData = "UserData"
         }
     }
+
 
     private struct ItemsResponse: Decodable {
         let items: [LibraryItem]
@@ -575,34 +579,62 @@ struct UserData: Decodable {
 
     // MARK: - Image URL helpers for items
 
-    /// Construct a URL for an item's primary image.  If the item has a primary image tag
-    /// the tag is appended as a query parameter.  Optionally specify a maximum width to
-    /// request a resized image.  Returns nil if the item has no primary image.
-    func itemImageURL(for item: LibraryItem, maxWidth: Int? = nil) -> URL? {
-        // If there is no image tag, Jellyfin may still return an image but we'll avoid unnecessary requests
-        // by checking for the tag.  Remove this guard if you want a default image for all items.
-        let base = baseURL.appendingPathComponent("Items/\(item.id)/Images/Primary")
+    /// Construct a URL for an item's image of the requested kind (Primary/Backdrop/Thumb/etc).
+    /// If an image tag is available it is appended as a query parameter. Optionally specify
+    /// a maximum width to request a resized image.
+    func itemImageURL(for item: LibraryItem, kind: String = "Primary", maxWidth: Int? = nil) -> URL? {
+        let base = baseURL.appendingPathComponent("Items/\(item.id)/Images/\(kind)")
         if let tag = item.primaryImageTag {
             var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
-            var items: [URLQueryItem] = [URLQueryItem(name: "tag", value: tag)]
-            if let width = maxWidth {
-                items.append(URLQueryItem(name: "maxWidth", value: String(width)))
+            var q: [URLQueryItem] = [URLQueryItem(name: "tag", value: tag)]
+            if let maxWidth {
+                q.append(URLQueryItem(name: "maxWidth", value: String(maxWidth)))
             }
-            components?.queryItems = items
+            components?.queryItems = q
             return components?.url ?? base
         } else {
-            // If there is no tag but we still want the image, simply return the base URL
-            return base
+            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+            if let maxWidth {
+                components?.queryItems = [URLQueryItem(name: "maxWidth", value: String(maxWidth))]
+            }
+            return components?.url ?? base
         }
     }
 
-    /// Construct a URL for the primary image of a detailed item.  Accepts an
-    /// `ItemDetail` rather than a `LibraryItem` and uses the item's
-    /// `primaryImageTag` if available to build a tagged URL.  Returns nil if
-    /// there is no image for the item.
-    func itemImageURL(for detail: ItemDetail, maxWidth: Int? = nil) -> URL? {
-        let base = baseURL.appendingPathComponent("Items/\(detail.id)/Images/Primary")
+    /// Backwards-compatible convenience (Primary).
+    func itemImageURL(for item: LibraryItem, maxWidth: Int? = nil) -> URL? {
+        itemImageURL(for: item, kind: "Primary", maxWidth: maxWidth)
+    }
+
+    /// Construct a URL for a detailed item's image of the requested kind (Primary/Backdrop/Thumb/etc).
+    func itemImageURL(for detail: ItemDetail, kind: String = "Primary", maxWidth: Int? = nil) -> URL? {
+        let base = baseURL.appendingPathComponent("Items/\(detail.id)/Images/\(kind)")
         if let tag = detail.primaryImageTag {
+            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+            var q: [URLQueryItem] = [URLQueryItem(name: "tag", value: tag)]
+            if let maxWidth {
+                q.append(URLQueryItem(name: "maxWidth", value: String(maxWidth)))
+            }
+            components?.queryItems = q
+            return components?.url ?? base
+        } else {
+            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+            if let maxWidth {
+                components?.queryItems = [URLQueryItem(name: "maxWidth", value: String(maxWidth))]
+            }
+            return components?.url ?? base
+        }
+    }
+
+    /// Backwards-compatible convenience (Primary).
+    func itemImageURL(for detail: ItemDetail, maxWidth: Int? = nil) -> URL? {
+        itemImageURL(for: detail, kind: "Primary", maxWidth: maxWidth)
+    }
+
+    /// Construct a URL for a person's primary image.
+    func personImageURL(for person: Person, maxWidth: Int? = nil) -> URL? {
+        let base = baseURL.appendingPathComponent("Items/\(person.id)/Images/Primary")
+        if let tag = person.primaryImageTag {
             var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
             var items: [URLQueryItem] = [URLQueryItem(name: "tag", value: tag)]
             if let width = maxWidth {
@@ -610,29 +642,10 @@ struct UserData: Decodable {
             }
             components?.queryItems = items
             return components?.url ?? base
-        } else {
-            return base
         }
+        return base
     }
-
-
-/// Construct a URL for a person's primary image.
-func personImageURL(for person: Person, maxWidth: Int? = nil) -> URL? {
-    let base = baseURL.appendingPathComponent("Items/\(person.id)/Images/Primary")
-    if let tag = person.primaryImageTag {
-        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
-        var items: [URLQueryItem] = [URLQueryItem(name: "tag", value: tag)]
-        if let width = maxWidth {
-            items.append(URLQueryItem(name: "maxWidth", value: String(width)))
-        }
-        components?.queryItems = items
-        return components?.url ?? base
-    }
-    return base
-}
-
-
-    // MARK: - Item detail retrieval
+// MARK: - Item detail retrieval
 
     /// Fetch detailed information for a specific media item.  The item ID is
     /// required.  Pass the user ID to include user-specific data in the
@@ -648,7 +661,10 @@ func personImageURL(for person: Person, maxWidth: Int? = nil) -> URL? {
             queryItems.append(URLQueryItem(name: "UserId", value: uid))
         }
         // Request only relevant fields.  See Jellyfin ItemFields enum for more.
-        queryItems.append(URLQueryItem(name: "Fields", value: "Overview,Genres,Taglines,ProductionYear,RunTimeTicks,CommunityRating,PrimaryImageTag,MediaType"))
+        queryItems.append(URLQueryItem(
+            name: "Fields",
+            value: "Overview,Genres,Taglines,ProductionYear,RunTimeTicks,CommunityRating,PrimaryImageTag,MediaType,UserData"
+        ))
         components.queryItems = queryItems
         guard let url = components.url else {
             DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
@@ -840,19 +856,76 @@ func fetchNextUpEpisode(seriesId: String, userId: String, completion: @escaping 
 
     /// Represents a media source within a playback info response.  Only the fields
     /// needed for constructing a stream URL are decoded here.
+        /// Represents a media source within a playback info response.  This is used both for
+    /// stream playback and for showing technical details (codec, resolution, audio layout).
     struct PlaybackMediaSource: Decodable {
         let id: String?
         let transcodingUrl: String?
         let path: String?
         let container: String?
 
+        // Extra fields for technical display
+        let size: Int64?
+        let bitrate: Int?
+        let runTimeTicks: Int?
+        let mediaStreams: [PlaybackMediaStream]?
+
         enum CodingKeys: String, CodingKey {
             case id = "Id"
             case transcodingUrl = "TranscodingUrl"
             case path = "Path"
             case container = "Container"
+
+            case size = "Size"
+            case bitrate = "Bitrate"
+            case runTimeTicks = "RunTimeTicks"
+            case mediaStreams = "MediaStreams"
         }
     }
+
+    /// Represents a single stream (video/audio/subtitle) inside a media source.
+    struct PlaybackMediaStream: Decodable {
+        let type: String?              // "Video", "Audio", "Subtitle"
+        let codec: String?
+        let displayTitle: String?
+        let language: String?
+        let isDefault: Bool?
+        let isForced: Bool?
+
+        // Video
+        let width: Int?
+        let height: Int?
+        let bitRate: Int?
+        let averageFrameRate: Double?
+        let videoRange: String?
+        let profile: String?
+
+        // Audio
+        let channels: Int?
+        let channelLayout: String?
+        let sampleRate: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case type = "Type"
+            case codec = "Codec"
+            case displayTitle = "DisplayTitle"
+            case language = "Language"
+            case isDefault = "IsDefault"
+            case isForced = "IsForced"
+
+            case width = "Width"
+            case height = "Height"
+            case bitRate = "BitRate"
+            case averageFrameRate = "AverageFrameRate"
+            case videoRange = "VideoRange"
+            case profile = "Profile"
+
+            case channels = "Channels"
+            case channelLayout = "ChannelLayout"
+            case sampleRate = "SampleRate"
+        }
+    }
+
 
     /// Fetch playback info for an item.  This calls `/Items/{itemId}/PlaybackInfo`
     /// with an optional userId.  The result includes media sources and a play session id.

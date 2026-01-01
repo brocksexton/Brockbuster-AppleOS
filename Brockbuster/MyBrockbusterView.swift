@@ -15,6 +15,26 @@ struct MyBrockbusterView: View {
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
 
+    /// For presentation purposes we keep favourites grouped consistently.
+    /// Server order can vary based on sort defaults, so we normalize here.
+    static func sortFavourites(_ items: [JellyfinClient.LibraryItem]) -> [JellyfinClient.LibraryItem] {
+        func isMovie(_ item: JellyfinClient.LibraryItem) -> Bool {
+            item.mediaType == "Movie" || (item.type ?? "").lowercased() == "movie"
+        }
+        func isSeries(_ item: JellyfinClient.LibraryItem) -> Bool {
+            item.mediaType == "Series" || (item.type ?? "").lowercased() == "series"
+        }
+        func isBoxSet(_ item: JellyfinClient.LibraryItem) -> Bool {
+            item.mediaType == "BoxSet" || (item.type ?? "").lowercased() == "boxset"
+        }
+
+        let movies = items.filter(isMovie)
+        let series = items.filter(isSeries)
+        let boxsets = items.filter(isBoxSet)
+        let other = items.filter { !isMovie($0) && !isSeries($0) && !isBoxSet($0) }
+        return movies + series + boxsets + other
+    }
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -233,7 +253,7 @@ struct MyBrockbusterView: View {
             let (r, h) = try await (resume, history)
             resumeItems = r
             historyItems = h
-            favouriteItems = (try? await favs) ?? []
+            favouriteItems = Self.sortFavourites((try? await favs) ?? [])
             isLoading = false
         } catch {
             isLoading = false
@@ -578,10 +598,28 @@ private struct FavouritesView: View {
     @EnvironmentObject private var session: SessionStore
     @Environment(\.horizontalSizeClass) private var hSize
 
-    @State private var items: [JellyfinClient.LibraryItem] = []
+    @State private var allItems: [JellyfinClient.LibraryItem] = []
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
     @State private var layout: Layout = .grid
+
+    @State private var filter: FavouriteFilter = .all
+
+    private enum FavouriteFilter: String, CaseIterable, Identifiable {
+        case all
+        case movies
+        case tvSeries
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .all: return "All"
+            case .movies: return "Movies"
+            case .tvSeries: return "TV Series"
+            }
+        }
+    }
 
     private enum Layout: String, CaseIterable, Identifiable {
         case grid
@@ -616,7 +654,7 @@ private struct FavouritesView: View {
                         ErrorPill(text: errorMessage)
                     }
 
-                    if items.isEmpty && !isLoading && errorMessage == nil {
+                    if allItems.isEmpty && !isLoading && errorMessage == nil {
                         emptyState
                     } else {
                         content
@@ -636,28 +674,92 @@ private struct FavouritesView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Your Favourites")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundColor(BrockbusterTheme.brockLight)
-                Text("Synced with Jellyfin")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundColor(BrockbusterTheme.brockLight.opacity(0.78))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Your Favourites")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundColor(BrockbusterTheme.brockLight)
+                    Text("Synced with Jellyfin")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(BrockbusterTheme.brockLight.opacity(0.78))
+                }
+                Spacer(minLength: 0)
+                Picker("Layout", selection: $layout) {
+                    Text("Grid").tag(Layout.grid)
+                    Text("List").tag(Layout.list)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 240)
             }
-            Spacer(minLength: 0)
-            Picker("Layout", selection: $layout) {
-                Text("Grid").tag(Layout.grid)
-                Text("List").tag(Layout.list)
+
+            Picker("Favourites Filter", selection: $filter) {
+                ForEach(FavouriteFilter.allCases) { option in
+                    Text(option.title).tag(option)
+                }
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 240)
         }
         .padding(.bottom, 6)
     }
 
     @ViewBuilder
     private var content: some View {
+        switch filter {
+        case .all:
+            sectionedContent
+        case .movies:
+            flatContent(items: movies)
+        case .tvSeries:
+            flatContent(items: series)
+        }
+    }
+
+    private func isMovie(_ item: JellyfinClient.LibraryItem) -> Bool {
+        item.mediaType == "Movie" || (item.type ?? "").lowercased() == "movie"
+    }
+
+    private func isSeries(_ item: JellyfinClient.LibraryItem) -> Bool {
+        item.mediaType == "Series" || (item.type ?? "").lowercased() == "series"
+    }
+
+    private var movies: [JellyfinClient.LibraryItem] {
+        allItems.filter(isMovie)
+    }
+
+    private var series: [JellyfinClient.LibraryItem] {
+        allItems.filter(isSeries)
+    }
+
+    private var sectionedContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if !movies.isEmpty {
+                Text("Movies")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundColor(BrockbusterTheme.brockLight)
+                    .padding(.top, 2)
+                flatContent(items: movies)
+            }
+
+            if !series.isEmpty {
+                Text("TV Series")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundColor(BrockbusterTheme.brockLight)
+                flatContent(items: series)
+            }
+
+            let other = allItems.filter { !isMovie($0) && !isSeries($0) }
+            if !other.isEmpty {
+                Text("Other")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundColor(BrockbusterTheme.brockLight)
+                flatContent(items: other)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func flatContent(items: [JellyfinClient.LibraryItem]) -> some View {
         switch layout {
         case .grid:
             LazyVGrid(columns: columns, spacing: 12) {
@@ -726,7 +828,9 @@ private struct FavouritesView: View {
         isLoading = true
         errorMessage = nil
         do {
-            items = try await session.fetchFavouriteItems(limit: 500)
+            let fetched = try await session.fetchFavouriteItems(limit: 500)
+            // Keep ordering consistent with the main My Brockbuster rail.
+            allItems = MyBrockbusterView.sortFavourites(fetched)
             isLoading = false
         } catch {
             isLoading = false

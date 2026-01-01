@@ -7,9 +7,11 @@ import UIKit
 /// its own navigation view to allow for deep navigation (e.g. library detail views).
 struct MainTabView: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var nowPlaying: NowPlayingManager
 
     var body: some View {
-        TabView {
+        ZStack(alignment: .bottom) {
+            TabView {
             NavigationStack {
                 HomeView()
             }
@@ -41,8 +43,26 @@ struct MainTabView: View {
                 Image(systemName: "ellipsis.circle")
                 Text("More")
             }
+            }
+
+            // Now Playing bar
+            NowPlayingBar()
+                .environmentObject(nowPlaying)
         }
         .tint(BrockbusterTheme.brockGold)
+        // NOTE: `nowPlaying` is an `@EnvironmentObject`, so `$nowPlaying` yields an
+        // `EnvironmentObject.Wrapper`, not a binding to `@Published` properties.
+        // Create an explicit binding instead.
+        .fullScreenCover(
+            isPresented: Binding(
+                get: { nowPlaying.isPlayerPresented },
+                set: { nowPlaying.isPlayerPresented = $0 }
+            )
+        ) {
+            NowPlayingFullscreenView()
+                .environmentObject(nowPlaying)
+        }
+
         .onAppear {
             // Customize tab bar appearance on iOS to improve contrast for unselected items
             #if os(iOS)
@@ -100,6 +120,7 @@ struct FriendsTab: View {
 /// streams.
 struct ServerHealthTab: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var nowPlaying: NowPlayingManager
     @StateObject private var vm = ServerHealthViewModel()
 
     private var columns: [GridItem] {

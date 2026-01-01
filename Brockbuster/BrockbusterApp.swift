@@ -4,6 +4,7 @@ import SwiftUI
 struct BrockbusterApp: App {
     @StateObject private var session = SessionStore()
     @StateObject private var accountManager = AccountManager()
+    @StateObject private var nowPlaying = NowPlayingManager()
     @AppStorage("settings.showAccountChooserOnLaunch") private var showAccountChooserOnLaunch: Bool = true
 
     var body: some Scene {
@@ -12,6 +13,7 @@ struct BrockbusterApp: App {
             contentView()
                 .environmentObject(session)
                 .environmentObject(accountManager)
+                .environmentObject(nowPlaying)
         }
     }
 

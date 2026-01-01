@@ -8,12 +8,11 @@ struct CollectionDetailView: View {
     let collection: JellyfinClient.LibraryItem
 
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var nowPlaying: NowPlayingManager
 
     @State private var items: [JellyfinClient.LibraryItem] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
-
-    @State private var playerSheet: PresentedPlayerURL?
     @State private var playbackTitle: String = ""
     @State private var playbackSubtitle: String? = nil
 
@@ -68,17 +67,6 @@ struct CollectionDetailView: View {
             if items.isEmpty {
                 await loadItems()
             }
-        }
-        .sheet(item: $playerSheet) { sheet in
-            PlayerView(
-                itemId: sheet.itemId,
-                url: sheet.context.url,
-                title: playbackTitle,
-                subtitle: playbackSubtitle,
-                posterURL: session.itemImageURL(for: collection, maxWidth: 700),
-                playbackContext: sheet.context,
-                startPositionTicks: sheet.startPositionTicks
-            )
         }
     }
 
@@ -314,11 +302,17 @@ struct CollectionDetailView: View {
                 }
             }
 
-            let context = try await session.playbackContext(for: targetId)
             let startTicks = targetItem.userData?.playbackPositionTicks ?? 0
 
             await MainActor.run {
-                self.playerSheet = PresentedPlayerURL(itemId: targetId, context: context, startPositionTicks: startTicks)
+                nowPlaying.play(
+                    itemId: targetId,
+                    title: playbackTitle ?? collection.name ?? "Collection",
+                    subtitle: playbackSubtitle,
+                    posterURL: session.itemImageURL(for: collection, maxWidth: 700),
+                    startPositionTicks: startTicks,
+                    session: session
+                )
             }
         } catch {
             await MainActor.run { self.errorMessage = error.localizedDescription }
@@ -335,9 +329,3 @@ struct CollectionDetailView: View {
     }
 }
 
-private struct PresentedPlayerURL: Identifiable {
-    let itemId: String
-    let context: SessionStore.PlaybackContext
-    let startPositionTicks: Int
-    var id: String { itemId }
-}

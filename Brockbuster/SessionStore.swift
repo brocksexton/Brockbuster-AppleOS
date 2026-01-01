@@ -9,7 +9,7 @@ final class SessionStore: ObservableObject {
 
     // MARK: - Playback Context
 
-    struct PlaybackContext: Sendable {
+    struct PlaybackContext: Sendable, Equatable {
         let url: URL
         let mediaSourceId: String?
         let playSessionId: String?
@@ -18,6 +18,12 @@ final class SessionStore: ObservableObject {
     /// Converts seconds to Jellyfin ticks (10,000,000 ticks = 1 second).
     static func secondsToTicks(_ seconds: Double) -> Int {
         Int(seconds * 10_000_000.0)
+    }
+
+    /// Converts Jellyfin ticks to seconds.
+    /// (10,000,000 ticks = 1 second)
+    static func ticksToSeconds(_ ticks: Int) -> Double {
+        Double(ticks) / 10_000_000.0
     }
 
     // The default server URL used when the user has not provided one.  This is

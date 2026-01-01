@@ -11,6 +11,7 @@ struct ItemDetailView: View {
     let item: JellyfinClient.LibraryItem
 
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var nowPlaying: NowPlayingManager
     @Environment(\.colorScheme) private var colorScheme
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -23,7 +24,6 @@ struct ItemDetailView: View {
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
     @State private var playbackSubtitle: String = ""
-    @State private var playerSheet: PresentedPlayerURL?
 
     @State private var isTogglingFavorite: Bool = false
     @State private var favoriteOverride: Bool? = nil
@@ -53,21 +53,8 @@ struct ItemDetailView: View {
         .bbNavigationTitleInline()
         #endif
         .task { await loadAll() }
-        .sheet(item: $playerSheet, onDismiss: {
-            Task { await loadAll() }
-        }) { sheet in
-            PlayerView(
-                itemId: item.id,
-                url: sheet.context.url,
-                title: detail?.name ?? item.name,
-                subtitle: playbackSubtitle,
-                posterURL: session.itemImageURL(for: item, maxWidth: 700),
-                playbackContext: sheet.context,
-                startPositionTicks: sheet.startPositionTicks
-            )
-        }
-    }
 
+    }
     // MARK: - UI Sections
     private var heroSection: some View {
         GeometryReader { geo in
@@ -527,18 +514,19 @@ private var actionRow: some View {
     private func playItem() {
         guard !isLoading else { return }
         isLoading = true
-        Task {
-            do {
-                let context = try await session.playbackContext(for: item.id)
-                await MainActor.run {
-                    playbackSubtitle = buildPlaybackSubtitle()
-                    playerSheet = PresentedPlayerURL(itemId: item.id, context: context, startPositionTicks: resolvedUserData?.playbackPositionTicks ?? 0)
-                }
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-            isLoading = false
-        }
+        playbackSubtitle = buildPlaybackSubtitle()
+
+        // NowPlayingManager will fetch playback context and keep the AVPlayer alive.
+        nowPlaying.play(
+            itemId: item.id,
+            title: detail?.name ?? item.name,
+            subtitle: playbackSubtitle,
+            posterURL: session.itemImageURL(for: item, maxWidth: 700),
+            startPositionTicks: resolvedUserData?.playbackPositionTicks ?? 0,
+            session: session
+        )
+
+        isLoading = false
     }
 
     private func buildPlaybackSubtitle() -> String {

@@ -150,6 +150,23 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    /// Restore a session using a previously stored access token and user.
+    /// This is used for "remembered accounts" flows.
+    func restoreSession(serverURL: URL, user: JellyfinUser, accessToken: String, memberSince: Date?) {
+        self.serverURL = serverURL
+        self.client = JellyfinClient(baseURL: serverURL)
+        self.client.setToken(accessToken)
+        self.currentUser = user
+        self.accessToken = accessToken
+        if let ms = memberSince {
+            self.joinDate = ms
+        }
+        // Reset cached per-session data.
+        self.libraries.removeAll()
+        self.isFetchingLibraries = false
+        self.itemCache.removeAll()
+    }
+
     /// Reset the server URL to nil and clear all session information.
     func resetServer() {
         // Clear persisted values

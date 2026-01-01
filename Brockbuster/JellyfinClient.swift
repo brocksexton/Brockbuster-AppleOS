@@ -43,6 +43,12 @@ final class JellyfinClient {
         accessToken
     }
 
+    /// Allow higher-level session management to restore a previously stored
+    /// access token (e.g., from Keychain) without re-authenticating.
+    func setToken(_ token: String?) {
+        self.accessToken = token
+    }
+
     // MARK: - API models
 
     /// Encodes the payload for the login request.  Note that the password field for

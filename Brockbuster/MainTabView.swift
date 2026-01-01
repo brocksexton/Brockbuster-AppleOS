@@ -19,11 +19,19 @@ struct MainTabView: View {
             }
 
             NavigationStack {
-                MembershipCardView()
+                FriendsView()
             }
             .tabItem {
-                Image(systemName: "wallet.pass")
-                Text("Member")
+                Image(systemName: "person.2.fill")
+                Text("Friends")
+            }
+
+            NavigationStack {
+                ServerHealthTab()
+            }
+            .tabItem {
+                Image(systemName: "waveform.path.ecg")
+                Text("Health")
             }
 
             NavigationStack {

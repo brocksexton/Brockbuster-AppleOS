@@ -7,10 +7,13 @@ import SwiftUI
 /// Blockbuster aesthetic.
 struct LoginView: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var accountManager: AccountManager
     @State private var username: String = ""
     @State private var password: String = ""
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
+    @AppStorage("settings.defaultRememberAccount") private var defaultRememberAccount: Bool = true
+    @State private var rememberThisAccount: Bool = true
     // Tracks whether the configured server is reachable.  nil indicates that
     // reachability is still being checked.
     @State private var serverReachable: Bool? = nil
@@ -76,6 +79,10 @@ struct LoginView: View {
                                 .foregroundColor(.red)
                                 .font(.footnote)
                         }
+
+                        Toggle("Remember this account on this device", isOn: $rememberThisAccount)
+                            .font(.footnote)
+                            .tint(BrockbusterTheme.brockGold)
                         Button(action: login) {
                             Text("Login")
                                 .font(BrockbusterTheme.Fonts.body.weight(.bold))
@@ -110,6 +117,8 @@ struct LoginView: View {
             // Clear credentials when returning to login screen
             username = ""
             password = ""
+            // Keep the toggle aligned with the user's preference.
+            rememberThisAccount = defaultRememberAccount
             // Check the server's health status on appear
             Task {
                 serverReachable = nil
@@ -126,6 +135,18 @@ struct LoginView: View {
             isLoading = true
             do {
                 try await session.login(username: username, password: password)
+                // Persist the session as a remembered account if the user asked for it.
+                if rememberThisAccount,
+                   let user = session.currentUser,
+                   let token = session.accessToken {
+                    accountManager.upsertAccount(
+                        serverURL: session.serverURL,
+                        user: user,
+                        accessToken: token,
+                        remembered: true,
+                        memberSince: session.joinDate
+                    )
+                }
                 isLoading = false
             } catch {
                 isLoading = false

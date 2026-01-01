@@ -6,6 +6,7 @@ import SwiftUI
 /// - Episode list for selected season (with optional episode search)
 struct SeriesDetailView: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var nowPlaying: NowPlayingManager
     let series: JellyfinClient.LibraryItem
 
     @State private var details: JellyfinClient.ItemDetail?
@@ -20,8 +21,12 @@ struct SeriesDetailView: View {
     @State private var isLoading = true
     @State private var isLoadingEpisodes = false
     @State private var errorMessage: String?
+
+    @State private var favoriteOverride: Bool? = nil
+    @State private var isTogglingFavorite: Bool = false
     
-    @State private var playerSheet: PresentedPlayerURL?
+    // Playback is handled by NowPlayingManager so playback persists if the user
+    // dismisses the fullscreen player.
 
     @State private var episodeQuery = ""
 
@@ -32,6 +37,11 @@ struct SeriesDetailView: View {
         let q = episodeQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return episodes }
         return episodes.filter { ($0.name).localizedCaseInsensitiveContains(q) }
+    }
+
+    private var isFavorite: Bool {
+        if let o = favoriteOverride { return o }
+        return details?.userData?.isFavorite ?? series.userData?.isFavorite ?? false
     }
 
     var body: some View {
@@ -59,19 +69,6 @@ struct SeriesDetailView: View {
         .navigationTitle(series.name ?? "Show")
         .bbNavigationTitleInline()
         .task { await load() }
-        .sheet(item: $playerSheet, onDismiss: {
-            Task { await refreshWatchStateAfterPlayback() }
-        }) { sheet in
-            PlayerView(
-                itemId: sheet.itemId,
-                url: sheet.context.url,
-                title: details?.name ?? series.name ?? "",
-                subtitle: primaryActionSubtitle,
-                posterURL: session.itemImageURL(for: series, maxWidth: 700),
-                playbackContext: sheet.context,
-                startPositionTicks: sheet.startPositionTicks
-            )
-        }
     }
 
     // MARK: - UI
@@ -174,6 +171,30 @@ private var primaryPlayRow: some View {
                 }
 
                 Spacer(minLength: 0)
+
+                Button {
+                    Task { await toggleFavoriteSeries() }
+                } label: {
+                    ZStack {
+                        Image(systemName: isFavorite ? "heart.fill" : "heart")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(isFavorite ? BrockbusterTheme.ticketYellow : BrockbusterTheme.textPrimary)
+
+                        if isTogglingFavorite {
+                            ProgressView()
+                                .scaleEffect(0.75)
+                        }
+                    }
+                    .frame(width: 40, height: 40)
+                    .background(.white.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(.white.opacity(0.12), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isTogglingFavorite || details == nil)
             }
         }
         .padding(.top, 6)
@@ -329,6 +350,34 @@ private var primaryPlayRow: some View {
         isLoading = false
     }
 
+    // MARK: - Favorites
+
+    @MainActor
+    private func toggleFavoriteSeries() async {
+        guard details != nil else { return }
+        guard session.currentUser != nil else { return }
+
+        let newValue = !isFavorite
+        isTogglingFavorite = true
+        favoriteOverride = newValue
+
+        do {
+            try await session.setFavorite(itemId: series.id, isFavorite: newValue)
+            favoriteOverride = nil
+            // Refresh details so the UI stays in sync.
+            do {
+                details = try await session.fetchItemDetails(itemId: series.id)
+            } catch {
+                // Non-fatal; keep optimistic state.
+            }
+        } catch {
+            favoriteOverride = nil
+            errorMessage = error.localizedDescription
+        }
+
+        isTogglingFavorite = false
+    }
+
     private func selectSeason(_ season: JellyfinClient.LibraryItem) async {
         selectedSeason = season
         episodeQuery = ""
@@ -462,23 +511,18 @@ private func playPrimary() async {
     
     private func play(episode: JellyfinClient.LibraryItem) async {
         guard !isLoadingEpisodes else { return }
-        do {
-            let context = try await session.playbackContext(for: episode.id)
-            await MainActor.run {
-                primaryActionSubtitle = episodeSubtitle(for: episode)
-                playerSheet = PresentedPlayerURL(itemId: episode.id, context: context, startPositionTicks: episode.userData?.playbackPositionTicks ?? 0)
-            }
-        } catch {
-            errorMessage = error.localizedDescription
+        await MainActor.run {
+            primaryActionSubtitle = episodeSubtitle(for: episode)
+            nowPlaying.play(
+                itemId: episode.id,
+                title: details?.name ?? series.name ?? "",
+                subtitle: primaryActionSubtitle,
+                posterURL: session.itemImageURL(for: series, maxWidth: 700),
+                startPositionTicks: episode.userData?.playbackPositionTicks ?? 0,
+                session: session
+            )
         }
     }
-}
-
-private struct PresentedPlayerURL: Identifiable {
-    let itemId: String
-    let context: SessionStore.PlaybackContext
-    let startPositionTicks: Int
-    var id: String { itemId }
 }
 
 /// Per-season watch progress.

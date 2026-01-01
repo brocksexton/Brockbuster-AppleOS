@@ -8,46 +8,53 @@ import UIKit
 struct MainTabView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var nowPlaying: NowPlayingManager
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            TabView {
-            NavigationStack {
-                HomeView()
-            }
-            .tabItem {
-                Image(systemName: "house.fill")
-                Text("Home")
-            }
+        GeometryReader { geo in
+            ZStack(alignment: .bottom) {
+                TabView {
+                    NavigationStack {
+                        HomeView()
+                    }
+                    .tabItem {
+                        Image(systemName: "house.fill")
+                        Text("Home")
+                    }
 
-            NavigationStack {
-                MyBrockbusterView()
-            }
-            .tabItem {
-                Image(systemName: "sparkles")
-                Text("My")
-            }
+                    NavigationStack {
+                        MyBrockbusterView()
+                    }
+                    .tabItem {
+                        Image(systemName: "sparkles")
+                        Text("My")
+                    }
 
-            NavigationStack {
-                ServerHealthTab()
-            }
-            .tabItem {
-                Image(systemName: "waveform.path.ecg")
-                Text("Health")
-            }
+                    NavigationStack {
+                        ServerHealthTab()
+                    }
+                    .tabItem {
+                        Image(systemName: "waveform.path.ecg")
+                        Text("Health")
+                    }
 
-            NavigationStack {
-                MoreView()
-            }
-            .tabItem {
-                Image(systemName: "ellipsis.circle")
-                Text("More")
-            }
-            }
+                    NavigationStack {
+                        MoreView()
+                    }
+                    .tabItem {
+                        Image(systemName: "ellipsis.circle")
+                        Text("More")
+                    }
+                }
 
-            // Now Playing bar
-            NowPlayingBar()
-                .environmentObject(nowPlaying)
+                // Now Playing bar
+                // Position it above the tab bar + home indicator so it doesn't collide with
+                // the system UI. This also keeps it consistent across device sizes.
+                NowPlayingBar()
+                    .environmentObject(nowPlaying)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, nowPlayingBarBottomPadding(safeBottom: geo.safeAreaInsets.bottom))
+            }
         }
         .tint(BrockbusterTheme.brockGold)
         // NOTE: `nowPlaying` is an `@EnvironmentObject`, so `$nowPlaying` yields an
@@ -80,6 +87,14 @@ struct MainTabView: View {
             }
             #endif
         }
+    }
+
+    private func nowPlayingBarBottomPadding(safeBottom: CGFloat) -> CGFloat {
+        // The TabView already accounts for the home indicator safe area.
+        // We only need a modest lift so the mini-player clears the tab bar.
+        // Lowering this slightly improves the “docked” feel while keeping taps reliable.
+        let tabBarLift: CGFloat = (horizontalSizeClass == .regular) ? 50 : 58
+        return tabBarLift
     }
 }
 

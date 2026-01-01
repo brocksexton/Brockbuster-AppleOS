@@ -3,6 +3,10 @@ import AVKit
 
 struct NowPlayingBar: View {
     @EnvironmentObject private var nowPlaying: NowPlayingManager
+    @EnvironmentObject private var session: SessionStore
+
+    @State private var isFavorite: Bool? = nil
+    @State private var isTogglingFavorite: Bool = false
 
     var body: some View {
         if let item = nowPlaying.item {
@@ -31,6 +35,24 @@ struct NowPlayingBar: View {
                     }
 
                     Spacer(minLength: 0)
+
+                    Button {
+                        Task { await toggleFavorite(for: item.id) }
+                    } label: {
+                        Image(systemName: (isFavorite ?? false) ? "heart.fill" : "heart")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle((isFavorite ?? false) ? BrockbusterTheme.ticketYellow : BrockbusterTheme.textPrimary)
+                            .frame(width: 34, height: 34)
+                            .background(.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                if isTogglingFavorite {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isTogglingFavorite)
 
                     Button {
                         nowPlaying.togglePlayPause()
@@ -66,6 +88,9 @@ struct NowPlayingBar: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
             .transition(.move(edge: .bottom).combined(with: .opacity))
+            .task(id: item.id) {
+                await loadFavorite(for: item.id)
+            }
         }
     }
 
@@ -100,5 +125,33 @@ struct NowPlayingBar: View {
             Image(systemName: "film.fill")
                 .foregroundStyle(BrockbusterTheme.ticketYellow)
         }
+    }
+
+    // MARK: - Favorites
+
+    @MainActor
+    private func loadFavorite(for itemId: String) async {
+        isFavorite = nil
+        do {
+            let detail = try await session.fetchItemDetails(itemId: itemId)
+            isFavorite = detail.userData?.isFavorite ?? false
+        } catch {
+            isFavorite = false
+        }
+    }
+
+    @MainActor
+    private func toggleFavorite(for itemId: String) async {
+        guard session.currentUser != nil else { return }
+        let newValue = !(isFavorite ?? false)
+        isTogglingFavorite = true
+        isFavorite = newValue
+        do {
+            try await session.setFavorite(itemId: itemId, isFavorite: newValue)
+        } catch {
+            // Roll back on failure.
+            isFavorite?.toggle()
+        }
+        isTogglingFavorite = false
     }
 }

@@ -58,7 +58,7 @@ struct LoginView: View {
                                 .font(BrockbusterTheme.Fonts.body.weight(.semibold))
                                 .foregroundColor(BrockbusterTheme.textPrimary)
                             TextField("Your username", text: $username)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .bbTextFieldStyle()
                                 #if os(iOS) || os(tvOS)
                                 .disableAutocorrection(true)
                                 .autocapitalization(.none)
@@ -69,7 +69,7 @@ struct LoginView: View {
                                 .font(BrockbusterTheme.Fonts.body.weight(.semibold))
                                 .foregroundColor(BrockbusterTheme.textPrimary)
                             SecureField("Your password", text: $password)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .bbTextFieldStyle()
                         }
                         if let errorMessage = errorMessage {
                             Text(errorMessage)

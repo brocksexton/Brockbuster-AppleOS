@@ -83,7 +83,7 @@ struct FriendsTab: View {
         }
         .navigationTitle("Friends")
         #if !os(macOS)
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         #endif
     }
 }
@@ -161,7 +161,7 @@ struct ServerHealthTab: View {
         }
         .navigationTitle("Server Health")
         #if !os(macOS)
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         #endif
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -395,7 +395,7 @@ struct SocialTab: View {
         }
         .navigationTitle("Social")
         #if !os(macOS)
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         #endif
     }
 }

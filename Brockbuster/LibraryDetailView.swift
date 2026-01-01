@@ -80,7 +80,7 @@ struct LibraryDetailView: View {
             }
         }
         #if !os(macOS)
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         #endif
         .task {
             // Fetch items when the view appears
@@ -105,7 +105,7 @@ struct LibraryDetailView: View {
     private var searchBar: some View {
         HStack {
             TextField("Search", text: $searchText)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .bbTextFieldStyle()
                 .padding(.horizontal)
             if !searchText.isEmpty {
                 Button(action: { searchText = "" }) {

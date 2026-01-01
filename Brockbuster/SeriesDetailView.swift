@@ -54,7 +54,7 @@ struct SeriesDetailView: View {
         }
         .background(BrockbusterTheme.Background)
         .navigationTitle(series.name ?? "Show")
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         .task { await load() }
         .sheet(item: $playerSheet) { sheet in
             PlayerView(
@@ -214,9 +214,14 @@ private var primaryPlayRow: some View {
 
             // Episode search is scoped to the currently selected season.
             if selectedSeason != nil {
+                #if os(tvOS)
+                TextField("Search episodes", text: $episodeQuery)
+                    .autocorrectionDisabled(true)
+                #else
                 TextField("Search episodes", text: $episodeQuery)
                     .textFieldStyle(.roundedBorder)
                     .autocorrectionDisabled(true)
+                #endif
             }
 
             if selectedSeason == nil {
@@ -558,4 +563,3 @@ private struct PosterImage: View {
         }
     }
 }
-

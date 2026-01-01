@@ -35,7 +35,7 @@ struct ServerSetupView: View {
                             .font(BrockbusterTheme.Fonts.body.weight(.semibold))
                             .foregroundColor(BrockbusterTheme.textPrimary)
                         TextField("https://example.com", text: $urlString)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .bbTextFieldStyle()
                             #if os(iOS) || os(tvOS)
                             .keyboardType(.URL)
                             .autocapitalization(.none)

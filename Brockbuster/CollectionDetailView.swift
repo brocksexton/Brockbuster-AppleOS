@@ -61,7 +61,7 @@ struct CollectionDetailView: View {
             }
         }
         #if !os(macOS)
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         #endif
         .navigationTitle(collection.name)
         .task {
@@ -123,7 +123,7 @@ struct CollectionDetailView: View {
     private var searchRow: some View {
         HStack {
             TextField("Search", text: $searchText)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .bbTextFieldStyle()
                 .padding(.horizontal)
 
             if !searchText.isEmpty {

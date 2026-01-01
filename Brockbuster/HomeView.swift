@@ -90,13 +90,29 @@ struct HomeView: View {
             }
         }
         .navigationTitle("Home")
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         .task {
             await model.bootstrapIfNeeded(session: session)
         }
     }
 
     // MARK: - Subviews
+
+    private var lightModeGradientColors: [Color] {
+        #if os(tvOS)
+        return [
+            BrockbusterTheme.brockDark,
+            BrockbusterTheme.brockBlue.opacity(0.14),
+            BrockbusterTheme.brockGold.opacity(0.10)
+        ]
+        #else
+        return [
+            Color(.systemBackground),
+            BrockbusterTheme.brockBlue.opacity(0.14),
+            BrockbusterTheme.brockGold.opacity(0.10)
+        ]
+        #endif
+    }
 
     private var background: some View {
         Group {
@@ -110,13 +126,8 @@ struct HomeView: View {
                     endPoint: .bottom
                 )
             } else {
-                // Softer, less "muddy" light-mode treatment.
                 LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(.systemBackground),
-                        BrockbusterTheme.brockBlue.opacity(0.14),
-                        BrockbusterTheme.brockGold.opacity(0.10)
-                    ]),
+                    gradient: Gradient(colors: lightModeGradientColors),
                     startPoint: .top,
                     endPoint: .bottom
                 )

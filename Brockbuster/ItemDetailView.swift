@@ -35,11 +35,7 @@ struct ItemDetailView: View {
                     )
                 } else {
                     LinearGradient(
-                        gradient: Gradient(colors: [
-                            Color(.systemBackground),
-                            BrockbusterTheme.brockBlue.opacity(0.14),
-                            BrockbusterTheme.brockGold.opacity(0.10)
-                        ]),
+                        gradient: Gradient(colors: lightModeGradientColors),
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -222,7 +218,7 @@ struct ItemDetailView: View {
         }
         .navigationTitle(detail?.name ?? item.name)
         #if !os(macOS)
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         #endif
         .task {
             // Load details on appear if not already loaded
@@ -328,6 +324,22 @@ struct ItemDetailView: View {
             }
             isLoading = false
         }
+    }
+    
+    private var lightModeGradientColors: [Color] {
+        #if os(tvOS)
+        return [
+            BrockbusterTheme.brockDark,
+            BrockbusterTheme.brockBlue.opacity(0.14),
+            BrockbusterTheme.brockGold.opacity(0.10)
+        ]
+        #else
+        return [
+            Color(.systemBackground),
+            BrockbusterTheme.brockBlue.opacity(0.14),
+            BrockbusterTheme.brockGold.opacity(0.10)
+        ]
+        #endif
     }
 }
 

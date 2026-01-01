@@ -110,7 +110,7 @@ struct MembershipCardView: View {
         }
         .navigationTitle("Membership Card")
         #if !os(macOS)
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         #endif
     }
     

@@ -32,7 +32,7 @@ struct SeasonDetailView: View {
                 // Search field
                 HStack {
                     TextField("Search episodes", text: $searchText)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .bbTextFieldStyle()
                         .padding(.horizontal)
                     if !searchText.isEmpty {
                         Button(action: { searchText = "" }) {
@@ -107,7 +107,7 @@ struct SeasonDetailView: View {
             }
         }
         #if !os(macOS)
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         #endif
         .navigationTitle(season.name)
         .task {

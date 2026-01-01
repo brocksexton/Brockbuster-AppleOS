@@ -67,7 +67,7 @@ struct PeopleView: View {
         }
         .navigationTitle("People")
         #if !os(macOS)
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         #endif
         .task {
             vm.query = ""

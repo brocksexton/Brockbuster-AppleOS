@@ -227,8 +227,10 @@ private struct PlayerViewControllerRepresentable: UIViewControllerRepresentable 
         controller.player = player
         controller.showsPlaybackControls = true
         controller.allowsPictureInPicturePlayback = true
+#if !os(tvOS)
         controller.entersFullScreenWhenPlaybackBegins = false
         controller.exitsFullScreenWhenPlaybackEnds = true
+#endif
 
         // Prevent the "white box" look while the player is preparing.
         controller.view.backgroundColor = .black
@@ -307,3 +309,4 @@ private struct PlayerViewControllerRepresentable: UIViewControllerRepresentable 
         }
     }
 }
+

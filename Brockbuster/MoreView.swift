@@ -34,7 +34,7 @@ struct MoreView: View {
         }
         .navigationTitle("More")
         #if !os(macOS)
-        .navigationBarTitleDisplayMode(.large)
+        .bbNavigationTitleLarge()
         #endif
     }
 }
@@ -56,7 +56,7 @@ struct SettingsTab: View {
         }
         .navigationTitle("Settings")
         #if !os(macOS)
-        .navigationBarTitleDisplayMode(.inline)
+        .bbNavigationTitleInline()
         #endif
     }
 }

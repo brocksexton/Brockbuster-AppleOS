@@ -71,11 +71,13 @@ struct CollectionDetailView: View {
         }
         .sheet(item: $playerSheet) { sheet in
             PlayerView(
-                itemId: collection.id,
-                url: sheet.url,
+                itemId: sheet.itemId,
+                url: sheet.context.url,
                 title: playbackTitle,
                 subtitle: playbackSubtitle,
-                posterURL: session.itemImageURL(for: collection, maxWidth: 700)
+                posterURL: session.itemImageURL(for: collection, maxWidth: 700),
+                playbackContext: sheet.context,
+                startPositionTicks: sheet.startPositionTicks
             )
         }
     }
@@ -287,35 +289,36 @@ struct CollectionDetailView: View {
 
         do {
             let firstType = (firstItem.type ?? "").lowercased()
-            let targetId: String
+            var targetItem: JellyfinClient.LibraryItem = firstItem
+            var targetId: String = firstItem.id
 
             if firstType == "series" {
-                // Prefer "Next Up" / Resume style episode if available; otherwise first episode.
+                // Prefer "Next Up" / resume episode if available; otherwise first episode in the series.
                 if let ep = try await session.resolvePrimaryEpisodeForSeries(seriesId: firstItem.id) {
+                    targetItem = ep
                     targetId = ep.id
                     await MainActor.run {
                         self.playbackTitle = firstItem.name
                         self.playbackSubtitle = episodeSubtitle(ep)
                     }
                 } else {
-                    targetId = firstItem.id
                     await MainActor.run {
                         self.playbackTitle = firstItem.name
                         self.playbackSubtitle = nil
                     }
                 }
             } else {
-                targetId = firstItem.id
                 await MainActor.run {
                     self.playbackTitle = firstItem.name
                     self.playbackSubtitle = firstItem.productionYear.map(String.init)
                 }
             }
 
-            let url = try await session.streamURL(for: targetId)
+            let context = try await session.playbackContext(for: targetId)
+            let startTicks = targetItem.userData?.playbackPositionTicks ?? 0
 
             await MainActor.run {
-                self.playerSheet = PresentedPlayerURL(url: url)
+                self.playerSheet = PresentedPlayerURL(itemId: targetId, context: context, startPositionTicks: startTicks)
             }
         } catch {
             await MainActor.run { self.errorMessage = error.localizedDescription }
@@ -333,6 +336,8 @@ struct CollectionDetailView: View {
 }
 
 private struct PresentedPlayerURL: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
+    let itemId: String
+    let context: SessionStore.PlaybackContext
+    let startPositionTicks: Int
+    var id: String { itemId }
 }

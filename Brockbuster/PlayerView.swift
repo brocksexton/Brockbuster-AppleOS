@@ -29,10 +29,24 @@ struct PlayerView: View {
     /// Optional poster or logo to show in the overlay.
     let posterURL: URL?
 
+    /// Playback context (mediaSourceId/playSessionId) used for reporting playback to Jellyfin.
+    let playbackContext: SessionStore.PlaybackContext?
+
+    /// Resume position in Jellyfin ticks (10,000,000 ticks = 1 second).
+    let startPositionTicks: Int
+
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var session: SessionStore
 
     @State private var currentURL: URL
+    @State private var avPlayer: AVPlayer?
+    @State private var timeObserverToken: Any?
+    @State private var lastProgressReportTicks: Int = 0
+    /// Tracks the last known position so we can persist progress even if the
+    /// player is dismissed before the periodic progress timer fires.
+    @State private var lastKnownPositionTicks: Int = 0
+    @State private var didPlayToEnd: Bool = false
+    @State private var hasReportedStart: Bool = false
     @State private var showOverlay: Bool = true
     @State private var overlayHideTask: Task<Void, Never>?
 
@@ -40,12 +54,14 @@ struct PlayerView: View {
     @State private var isSwitchingStream: Bool = false
     @State private var errorMessage: String?
 
-    init(itemId: String, url: URL, title: String, subtitle: String?, posterURL: URL?) {
+    init(itemId: String, url: URL, title: String, subtitle: String?, posterURL: URL?, playbackContext: SessionStore.PlaybackContext? = nil, startPositionTicks: Int = 0) {
         self.itemId = itemId
         self.url = url
         self.title = title
         self.subtitle = subtitle
         self.posterURL = posterURL
+        self.playbackContext = playbackContext
+        self.startPositionTicks = startPositionTicks
         _currentURL = State(initialValue: url)
     }
 
@@ -53,12 +69,26 @@ struct PlayerView: View {
         ZStack(alignment: .top) {
             PlayerViewControllerRepresentable(
                 url: currentURL,
+                startPositionTicks: startPositionTicks,
+                onPlayerReady: { player in
+                    attachPlayer(player)
+                },
+                onPlaybackStarted: { currentTicks in
+                    Task { await reportPlaybackStarted(initialTicks: currentTicks) }
+                },
+                onPlaybackEnded: {
+                    didPlayToEnd = true
+                    Task { await reportPlaybackStopped(playedToCompletion: true, failed: false) }
+                },
                 onUserInteraction: {
                     // Re-show the metadata overlay whenever the user interacts with the player UI.
                     showOverlayNow()
                 },
                 onPlaybackFailed: { err in
-                    Task { await handlePlaybackFailure(err) }
+                    Task {
+                        await reportPlaybackStopped(playedToCompletion: false, failed: true)
+                        await handlePlaybackFailure(err)
+                    }
                 }
             )
             .ignoresSafeArea()
@@ -90,7 +120,33 @@ struct PlayerView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
-        .onDisappear { overlayHideTask?.cancel() }
+        .onDisappear {
+            overlayHideTask?.cancel()
+            // Send a final progress update before stopping so Jellyfin reliably
+            // persists resume state even for short play sessions.
+            Task {
+                let seconds = avPlayer?.currentTime().seconds
+                let currentTicks: Int
+                if let seconds, seconds.isFinite, seconds >= 0 {
+                    currentTicks = SessionStore.secondsToTicks(seconds)
+                } else {
+                    currentTicks = lastKnownPositionTicks
+                }
+
+                let paused = avPlayer?.timeControlStatus != .playing
+                if let context = playbackContext {
+                    await session.reportPlaybackProgress(
+                        context: context,
+                        itemId: itemId,
+                        positionTicks: max(currentTicks, lastKnownPositionTicks),
+                        isPaused: paused
+                    )
+                }
+
+                await reportPlaybackStopped(playedToCompletion: didPlayToEnd, failed: false)
+            }
+            detachPlayer()
+        }
         .alert("Playback Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("Close") { dismiss() }
         } message: {
@@ -98,6 +154,93 @@ struct PlayerView: View {
         }
     }
 
+
+
+    // MARK: - Jellyfin playback reporting
+
+    private func attachPlayer(_ player: AVPlayer) {
+        // Swap observers if the player instance changes (e.g., when switching to HLS).
+        if avPlayer !== player {
+            detachPlayer()
+            avPlayer = player
+        }
+
+        guard timeObserverToken == nil else { return }
+
+        // Capture an initial position as soon as the player is attached.
+        let initialSeconds = player.currentTime().seconds
+        if initialSeconds.isFinite, initialSeconds >= 0 {
+            lastKnownPositionTicks = SessionStore.secondsToTicks(initialSeconds)
+        }
+
+        let interval = CMTime(seconds: 7, preferredTimescale: 600)
+        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { _ in
+            let seconds = player.currentTime().seconds
+            guard seconds.isFinite, seconds >= 0 else { return }
+
+            let ticks = SessionStore.secondsToTicks(seconds)
+            lastKnownPositionTicks = ticks
+
+            // Avoid spamming: only report if we've advanced meaningfully.
+            if abs(ticks - lastProgressReportTicks) < SessionStore.secondsToTicks(3) {
+                return
+            }
+            lastProgressReportTicks = ticks
+
+            let paused = player.timeControlStatus != .playing
+            Task { await reportPlaybackProgress(positionTicks: ticks, isPaused: paused) }
+        }
+    }
+
+    private func detachPlayer() {
+        if let token = timeObserverToken, let player = avPlayer {
+            player.removeTimeObserver(token)
+        }
+        timeObserverToken = nil
+        avPlayer = nil
+    }
+
+    private func reportPlaybackStarted(initialTicks: Int) async {
+        guard !hasReportedStart else { return }
+        hasReportedStart = true
+        guard let context = playbackContext else { return }
+
+        // Keep our last-known position in sync.
+        lastKnownPositionTicks = max(lastKnownPositionTicks, initialTicks)
+
+        await session.reportPlaybackStarted(
+            context: context,
+            itemId: itemId,
+            positionTicks: initialTicks,
+            isPaused: false
+        )
+    }
+
+    private func reportPlaybackProgress(positionTicks: Int, isPaused: Bool) async {
+        guard let context = playbackContext else { return }
+        await session.reportPlaybackProgress(
+            context: context,
+            itemId: itemId,
+            positionTicks: positionTicks,
+            isPaused: isPaused
+        )
+    }
+
+    private func reportPlaybackStopped(playedToCompletion: Bool, failed: Bool) async {
+        guard let context = playbackContext else { return }
+
+        let seconds = avPlayer?.currentTime().seconds ?? 0
+        let liveTicks = SessionStore.secondsToTicks(max(0, seconds))
+        let ticks = max(liveTicks, lastKnownPositionTicks)
+
+        await session.reportPlaybackStopped(
+            context: context,
+            itemId: itemId,
+            positionTicks: ticks,
+            playedToCompletion: playedToCompletion,
+            failed: failed
+        )
+    }
     private var overlay: some View {
         HStack(spacing: 12) {
             if let posterURL {
@@ -212,13 +355,24 @@ struct PlayerView: View {
     }
 }
 
-private struct PlayerViewControllerRepresentable: UIViewControllerRepresentable {
+private 
+struct PlayerViewControllerRepresentable: UIViewControllerRepresentable {
     let url: URL
+    let startPositionTicks: Int
+
+    let onPlayerReady: (AVPlayer) -> Void
+    let onPlaybackStarted: (Int) -> Void
+    let onPlaybackEnded: () -> Void
+
     let onUserInteraction: () -> Void
     let onPlaybackFailed: (Error?) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onUserInteraction: onUserInteraction, onPlaybackFailed: onPlaybackFailed)
+        Coordinator(
+            onUserInteraction: onUserInteraction,
+            onPlaybackFailed: onPlaybackFailed,
+            onPlaybackEnded: onPlaybackEnded
+        )
     }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
@@ -232,15 +386,14 @@ private struct PlayerViewControllerRepresentable: UIViewControllerRepresentable 
         controller.exitsFullScreenWhenPlaybackEnds = true
 #endif
 
-        // Prevent the "white box" look while the player is preparing.
         controller.view.backgroundColor = .black
 
-        // Capture taps even when AVPlayerViewController consumes touches.
         context.coordinator.attachInteractionRecognizer(to: controller)
-
         context.coordinator.attach(to: player)
 
-        player.play()
+        onPlayerReady(player)
+        startPlayback(on: player)
+
         return controller
     }
 
@@ -250,32 +403,52 @@ private struct PlayerViewControllerRepresentable: UIViewControllerRepresentable 
             let player = AVPlayer(url: url)
             uiViewController.player = player
             context.coordinator.attach(to: player)
+
+            onPlayerReady(player)
+            startPlayback(on: player)
+        }
+    }
+
+    private func startPlayback(on player: AVPlayer) {
+        if startPositionTicks > 0 {
+            let seconds = Double(startPositionTicks) / 10_000_000.0
+            let time = CMTime(seconds: seconds, preferredTimescale: 600)
+            player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                player.play()
+                onPlaybackStarted(startPositionTicks)
+            }
+        } else {
             player.play()
+            onPlaybackStarted(0)
         }
     }
 
     final class Coordinator: NSObject {
         private let onUserInteraction: () -> Void
         private let onPlaybackFailed: (Error?) -> Void
-        private var failedObserver: NSObjectProtocol?
-        private weak var controller: AVPlayerViewController?
+        private let onPlaybackEnded: () -> Void
 
-        init(onUserInteraction: @escaping () -> Void, onPlaybackFailed: @escaping (Error?) -> Void) {
+        private var failedObserver: NSObjectProtocol?
+        private var endedObserver: NSObjectProtocol?
+
+        init(
+            onUserInteraction: @escaping () -> Void,
+            onPlaybackFailed: @escaping (Error?) -> Void,
+            onPlaybackEnded: @escaping () -> Void
+        ) {
             self.onUserInteraction = onUserInteraction
             self.onPlaybackFailed = onPlaybackFailed
+            self.onPlaybackEnded = onPlaybackEnded
         }
 
         deinit {
-            if let obs = failedObserver {
-                NotificationCenter.default.removeObserver(obs)
-            }
+            if let obs = failedObserver { NotificationCenter.default.removeObserver(obs) }
+            if let obs = endedObserver { NotificationCenter.default.removeObserver(obs) }
         }
 
         func attach(to player: AVPlayer) {
-            if let obs = failedObserver {
-                NotificationCenter.default.removeObserver(obs)
-                failedObserver = nil
-            }
+            if let obs = failedObserver { NotificationCenter.default.removeObserver(obs); failedObserver = nil }
+            if let obs = endedObserver { NotificationCenter.default.removeObserver(obs); endedObserver = nil }
 
             if let item = player.currentItem {
                 failedObserver = NotificationCenter.default.addObserver(
@@ -287,16 +460,20 @@ private struct PlayerViewControllerRepresentable: UIViewControllerRepresentable 
                     let err = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
                     self.onPlaybackFailed(err)
                 }
+
+                endedObserver = NotificationCenter.default.addObserver(
+                    forName: .AVPlayerItemDidPlayToEndTime,
+                    object: item,
+                    queue: .main
+                ) { [weak self] _ in
+                    self?.onPlaybackEnded()
+                }
             }
         }
 
         func attachInteractionRecognizer(to controller: AVPlayerViewController) {
-            self.controller = controller
-
             let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
             tap.cancelsTouchesInView = false
-
-            // Prefer contentOverlayView if available so we don't interfere with the player's own gestures.
             if let overlay = controller.contentOverlayView {
                 overlay.addGestureRecognizer(tap)
             } else {
@@ -309,4 +486,5 @@ private struct PlayerViewControllerRepresentable: UIViewControllerRepresentable 
         }
     }
 }
+
 

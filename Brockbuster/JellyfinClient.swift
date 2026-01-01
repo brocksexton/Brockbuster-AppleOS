@@ -1042,4 +1042,164 @@ func fetchNextUpEpisode(seriesId: String, userId: String, completion: @escaping 
         components.queryItems = query
         return components.url
     }
+    // MARK: - Playback Reporting (scrobbling / resume)
+
+    /// Report that playback has started for an item.
+    /// This powers Jellyfin's "In Progress", "Resume", and "Continue Watching" behavior.
+    func reportPlaybackStarted(
+        itemId: String,
+        mediaSourceId: String?,
+        playSessionId: String?,
+        positionTicks: Int,
+        isPaused: Bool
+    ) async throws {
+        struct Payload: Encodable {
+            let itemId: String
+            let mediaSourceId: String?
+            let playSessionId: String?
+            let canSeek: Bool
+            let isPaused: Bool
+            let positionTicks: Int
+
+            enum CodingKeys: String, CodingKey {
+                case itemId = "ItemId"
+                case mediaSourceId = "MediaSourceId"
+                case playSessionId = "PlaySessionId"
+                case canSeek = "CanSeek"
+                case isPaused = "IsPaused"
+                case positionTicks = "PositionTicks"
+            }
+        }
+
+        let url = baseURL.appendingPathComponent("Sessions/Playing")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(buildAuthorizationHeader(withToken: accessToken), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue("Brockbuster/\(appVersion) (SwiftUI; Darwin)", forHTTPHeaderField: "User-Agent")
+
+        request.httpBody = try JSONEncoder().encode(
+            Payload(
+                itemId: itemId,
+                mediaSourceId: mediaSourceId,
+                playSessionId: playSessionId,
+                canSeek: true,
+                isPaused: isPaused,
+                positionTicks: positionTicks
+            )
+        )
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw NetworkError.invalidResponse
+        }
+    }
+
+    /// Periodic playback progress report. Call every ~5–10 seconds.
+    func reportPlaybackProgress(
+        itemId: String,
+        mediaSourceId: String?,
+        playSessionId: String?,
+        positionTicks: Int,
+        isPaused: Bool
+    ) async throws {
+        struct Payload: Encodable {
+            let eventName: String
+            let itemId: String
+            let mediaSourceId: String?
+            let playSessionId: String?
+            let isPaused: Bool
+            let positionTicks: Int
+
+            enum CodingKeys: String, CodingKey {
+                case eventName = "EventName"
+                case itemId = "ItemId"
+                case mediaSourceId = "MediaSourceId"
+                case playSessionId = "PlaySessionId"
+                case isPaused = "IsPaused"
+                case positionTicks = "PositionTicks"
+            }
+        }
+
+        let url = baseURL.appendingPathComponent("Sessions/Playing/Progress")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(buildAuthorizationHeader(withToken: accessToken), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue("Brockbuster/\(appVersion) (SwiftUI; Darwin)", forHTTPHeaderField: "User-Agent")
+
+        request.httpBody = try JSONEncoder().encode(
+            Payload(
+                eventName: "timeupdate",
+                itemId: itemId,
+                mediaSourceId: mediaSourceId,
+                playSessionId: playSessionId,
+                isPaused: isPaused,
+                positionTicks: positionTicks
+            )
+        )
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw NetworkError.invalidResponse
+        }
+    }
+
+    /// Report that playback has stopped. If `playedToCompletion` is true, Jellyfin can mark it watched.
+    func reportPlaybackStopped(
+        itemId: String,
+        mediaSourceId: String?,
+        playSessionId: String?,
+        positionTicks: Int,
+        playedToCompletion: Bool,
+        failed: Bool = false
+    ) async throws {
+        struct Payload: Encodable {
+            let itemId: String
+            let mediaSourceId: String?
+            let playSessionId: String?
+            let positionTicks: Int
+            let playedToCompletion: Bool
+            let failed: Bool
+
+            enum CodingKeys: String, CodingKey {
+                case itemId = "ItemId"
+                case mediaSourceId = "MediaSourceId"
+                case playSessionId = "PlaySessionId"
+                case positionTicks = "PositionTicks"
+                case playedToCompletion = "PlayedToCompletion"
+                case failed = "Failed"
+            }
+        }
+
+        let url = baseURL.appendingPathComponent("Sessions/Playing/Stopped")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(buildAuthorizationHeader(withToken: accessToken), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue("Brockbuster/\(appVersion) (SwiftUI; Darwin)", forHTTPHeaderField: "User-Agent")
+
+        request.httpBody = try JSONEncoder().encode(
+            Payload(
+                itemId: itemId,
+                mediaSourceId: mediaSourceId,
+                playSessionId: playSessionId,
+                positionTicks: positionTicks,
+                playedToCompletion: playedToCompletion,
+                failed: failed
+            )
+        )
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw NetworkError.invalidResponse
+        }
+    }
+
 }

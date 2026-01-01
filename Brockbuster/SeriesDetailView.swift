@@ -63,11 +63,13 @@ struct SeriesDetailView: View {
             Task { await refreshWatchStateAfterPlayback() }
         }) { sheet in
             PlayerView(
-                itemId: primaryEpisode?.id ?? series.id,
-                url: sheet.url,
+                itemId: sheet.itemId,
+                url: sheet.context.url,
                 title: details?.name ?? series.name ?? "",
                 subtitle: primaryActionSubtitle,
-                posterURL: session.itemImageURL(for: series, maxWidth: 700)
+                posterURL: session.itemImageURL(for: series, maxWidth: 700),
+                playbackContext: sheet.context,
+                startPositionTicks: sheet.startPositionTicks
             )
         }
     }
@@ -461,10 +463,10 @@ private func playPrimary() async {
     private func play(episode: JellyfinClient.LibraryItem) async {
         guard !isLoadingEpisodes else { return }
         do {
-            let url = try await session.streamURL(for: episode.id)
+            let context = try await session.playbackContext(for: episode.id)
             await MainActor.run {
                 primaryActionSubtitle = episodeSubtitle(for: episode)
-                playerSheet = PresentedPlayerURL(url: url)
+                playerSheet = PresentedPlayerURL(itemId: episode.id, context: context, startPositionTicks: episode.userData?.playbackPositionTicks ?? 0)
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -473,8 +475,10 @@ private func playPrimary() async {
 }
 
 private struct PresentedPlayerURL: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
+    let itemId: String
+    let context: SessionStore.PlaybackContext
+    let startPositionTicks: Int
+    var id: String { itemId }
 }
 
 /// Per-season watch progress.

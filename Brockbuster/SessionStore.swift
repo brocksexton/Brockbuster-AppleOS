@@ -6,6 +6,20 @@ import SwiftUI
 /// automatically react to changes (e.g. showing login when the user logs out).
 @MainActor
 final class SessionStore: ObservableObject {
+
+    // MARK: - Playback Context
+
+    struct PlaybackContext: Sendable {
+        let url: URL
+        let mediaSourceId: String?
+        let playSessionId: String?
+    }
+
+    /// Converts seconds to Jellyfin ticks (10,000,000 ticks = 1 second).
+    static func secondsToTicks(_ seconds: Double) -> Int {
+        Int(seconds * 10_000_000.0)
+    }
+
     // The default server URL used when the user has not provided one.  This is
     // configured for the Brockbuster service, but can be overridden by users via
     // the server setup screen.
@@ -412,14 +426,17 @@ final class SessionStore: ObservableObject {
     /// Construct a stream URL for a given item.  This first fetches playback info to obtain
     /// the media source ID and play session ID, then uses the client to build the final URL.
     /// Throws if the server responds with an error or if a valid stream URL cannot be built.
-    func streamURL(for itemId: String) async throws -> URL {
+    
+    /// Construct a stream URL for a given item. This first fetches playback info to obtain
+    /// the media source ID and play session ID, then uses the client to build the final URL.
+    /// Returns a `PlaybackContext` so the caller can report playback (started/progress/stopped).
+    func playbackContext(for itemId: String) async throws -> PlaybackContext {
         let playbackInfo = try await fetchPlaybackInfo(itemId: itemId)
-        // If a transcodingUrl is provided use it directly, appending the api_key
+
+        // If a transcodingUrl is provided use it directly, appending the api_key.
         if let source = playbackInfo.mediaSources.first,
            let transcoding = source.transcodingUrl {
-            // Build absolute URL from the relative transcodingUrl
             var url = serverURL.appendingPathComponent(transcoding)
-            // Append api_key if token is available and not already present
             if let token = accessToken {
                 if var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
                     var items = components.queryItems ?? []
@@ -430,26 +447,91 @@ final class SessionStore: ObservableObject {
                     }
                 }
             }
-            return url
+            return PlaybackContext(
+                url: url,
+                mediaSourceId: source.id,
+                playSessionId: playbackInfo.playSessionId
+            )
         }
+
         // Otherwise construct a stream URL using the Videos endpoint.
-        // We preferentially use HLS (m3u8) with an Apple-compatible profile.
-        // This allows Jellyfin to remux/transcode when a device cannot direct-play
-        // a given container/codec (e.g., MKV, DTS, etc.).
         let mediaSourceId = playbackInfo.mediaSources.first?.id
         let playSessionId = playbackInfo.playSessionId
 
-        // First attempt HLS playlist URL (server will remux/transcode as needed).
-        if let hlsURL = client.makeHLSURL(itemId: itemId, mediaSourceId: mediaSourceId, playSessionId: playSessionId, userId: currentUser?.id) {
-            return hlsURL
+        // Prefer HLS playlist URL (server will remux/transcode as needed).
+        if let hlsURL = client.makeHLSURL(
+            itemId: itemId,
+            mediaSourceId: mediaSourceId,
+            playSessionId: playSessionId,
+            userId: currentUser?.id
+        ) {
+            return PlaybackContext(url: hlsURL, mediaSourceId: mediaSourceId, playSessionId: playSessionId)
         }
 
         // Fallback to direct stream URL.
-        if let streamURL = client.makeStreamURL(itemId: itemId, mediaSourceId: mediaSourceId, playSessionId: playSessionId, userId: currentUser?.id) {
-            return streamURL
+        if let streamURL = client.makeStreamURL(
+            itemId: itemId,
+            mediaSourceId: mediaSourceId,
+            playSessionId: playSessionId,
+            userId: currentUser?.id
+        ) {
+            return PlaybackContext(url: streamURL, mediaSourceId: mediaSourceId, playSessionId: playSessionId)
         }
+
         throw JellyfinClient.NetworkError.invalidResponse
     }
+
+    /// Convenience helper that returns only the playable URL.
+    func streamURL(for itemId: String) async throws -> URL {
+        try await playbackContext(for: itemId).url
+    }
+
+
+    // MARK: - Playback Reporting
+
+    func reportPlaybackStarted(context: PlaybackContext, itemId: String, positionTicks: Int, isPaused: Bool) async {
+        do {
+            try await client.reportPlaybackStarted(
+                itemId: itemId,
+                mediaSourceId: context.mediaSourceId,
+                playSessionId: context.playSessionId,
+                positionTicks: positionTicks,
+                isPaused: isPaused
+            )
+        } catch {
+            // Non-fatal; do not disrupt playback.
+        }
+    }
+
+    func reportPlaybackProgress(context: PlaybackContext, itemId: String, positionTicks: Int, isPaused: Bool) async {
+        do {
+            try await client.reportPlaybackProgress(
+                itemId: itemId,
+                mediaSourceId: context.mediaSourceId,
+                playSessionId: context.playSessionId,
+                positionTicks: positionTicks,
+                isPaused: isPaused
+            )
+        } catch {
+            // Non-fatal; do not disrupt playback.
+        }
+    }
+
+    func reportPlaybackStopped(context: PlaybackContext, itemId: String, positionTicks: Int, playedToCompletion: Bool, failed: Bool = false) async {
+        do {
+            try await client.reportPlaybackStopped(
+                itemId: itemId,
+                mediaSourceId: context.mediaSourceId,
+                playSessionId: context.playSessionId,
+                positionTicks: positionTicks,
+                playedToCompletion: playedToCompletion,
+                failed: failed
+            )
+        } catch {
+            // Non-fatal; do not disrupt playback.
+        }
+    }
+
 
     /// If you ever want to force a transcoded HLS URL explicitly, call this helper.
     /// Currently this is the same as the preferred URL in `streamURL(for:)`.

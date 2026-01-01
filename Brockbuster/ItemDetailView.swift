@@ -55,10 +55,12 @@ struct ItemDetailView: View {
         }) { sheet in
             PlayerView(
                 itemId: item.id,
-                url: sheet.url,
+                url: sheet.context.url,
                 title: detail?.name ?? item.name,
                 subtitle: playbackSubtitle,
-                posterURL: session.itemImageURL(for: item, maxWidth: 700)
+                posterURL: session.itemImageURL(for: item, maxWidth: 700),
+                playbackContext: sheet.context,
+                startPositionTicks: sheet.startPositionTicks
             )
         }
     }
@@ -259,7 +261,7 @@ struct ItemDetailView: View {
                 )
                 .shadow(color: .black.opacity(0.25), radius: 14, x: 0, y: 10)
         } else if isEpisode {
-            PosterImageURLView(url: url)
+            PosterImageFallbackView(urls: episodeCoverArtFallbackURLs)
                 .frame(width: 92, height: 138)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(
@@ -282,8 +284,7 @@ struct ItemDetailView: View {
     /// Poster-style artwork shown in the hero overlay.
     ///
     /// - Movies: `Primary` poster.
-    /// - Episodes: prefer episode `Primary` (Jellyfin commonly stores the episode still as Primary),
-    ///   then Season `Primary`, then Series `Primary`.
+    /// - Episodes: prefer episode `Thumb`, then episode `Primary`, then Season `Primary`, then Series `Primary`.
     /// - Other: prefer `Thumb`, fall back to `Primary`.
     private var artworkPosterURL: URL? {
         if isMovie {
@@ -291,22 +292,57 @@ struct ItemDetailView: View {
         }
 
         if isEpisode {
-            // IMPORTANT:
-            // `Items/{id}/Images/Thumb` is not guaranteed to exist for Episodes. If we always construct
-            // a Thumb URL first, AsyncImage will attempt it, hit a 404, and we will never reach the
-            // fallbacks because the URL is non-nil.
-            //
-            // In practice, Jellyfin commonly stores the episode still under `Primary`, so we start there.
-            return session.itemImageURL(for: item, kind: "Primary", maxWidth: 720)
-                ?? (item.seasonId.flatMap { session.itemImageURL(itemId: $0, kind: "Primary", maxWidth: 720) })
+            // The artworkCard for episodes uses PosterImageFallbackView with a richer fallback chain.
+            // This value is kept as a conservative single-URL fallback.
+            return (item.seasonId.flatMap { session.itemImageURL(itemId: $0, kind: "Primary", maxWidth: 720) })
                 ?? (item.seriesId.flatMap { session.itemImageURL(itemId: $0, kind: "Primary", maxWidth: 720) })
+                ?? session.itemImageURL(for: item, kind: "Primary", maxWidth: 720)
+                ?? session.itemImageURL(for: item, kind: "Thumb", maxWidth: 720)
         }
 
         return session.itemImageURL(for: item, kind: "Thumb", maxWidth: 720)
             ?? session.itemImageURL(for: item, kind: "Primary", maxWidth: 720)
     }
 
-    private var actionRow: some View {
+    
+    /// Fallback chain for Episode "cover art" (the small poster tile).
+    /// Preference:
+    /// 1) Season Primary, then Season Thumb
+    /// 2) Series Primary, then Series Thumb
+    /// 3) Episode Primary (still) as a last resort
+    ///
+    /// NOTE: Jellyfin image URLs may be non-nil even when the server has no artwork (404),
+    /// so the UI must attempt these URLs in-order and advance on failure.
+    private var episodeCoverArtFallbackURLs: [URL] {
+        var urls: [URL] = []
+
+        if let seasonId = item.seasonId {
+            if let u = session.itemImageURL(itemId: seasonId, kind: "Primary", maxWidth: 720) { urls.append(u) }
+            if let u = session.itemImageURL(itemId: seasonId, kind: "Thumb",   maxWidth: 720) { urls.append(u) }
+        }
+
+        if let seriesId = item.seriesId {
+            if let u = session.itemImageURL(itemId: seriesId, kind: "Primary", maxWidth: 720) { urls.append(u) }
+            if let u = session.itemImageURL(itemId: seriesId, kind: "Thumb",   maxWidth: 720) { urls.append(u) }
+        }
+
+        if let u = session.itemImageURL(for: item, kind: "Primary", maxWidth: 720) { urls.append(u) }
+
+        // De-dupe while preserving order.
+        var seen = Set<String>()
+        var unique: [URL] = []
+        for u in urls {
+            let key = u.absoluteString
+            if !seen.contains(key) {
+                seen.insert(key)
+                unique.append(u)
+            }
+        }
+        return unique
+    }
+
+
+private var actionRow: some View {
         HStack(spacing: 12) {
             Button(action: playItem) {
                 HStack(spacing: 10) {
@@ -449,10 +485,10 @@ struct ItemDetailView: View {
         isLoading = true
         Task {
             do {
-                let url = try await session.streamURL(for: item.id)
+                let context = try await session.playbackContext(for: item.id)
                 await MainActor.run {
                     playbackSubtitle = buildPlaybackSubtitle()
-                    playerSheet = PresentedPlayerURL(url: url)
+                    playerSheet = PresentedPlayerURL(itemId: item.id, context: context, startPositionTicks: resolvedUserData?.playbackPositionTicks ?? 0)
                 }
             } catch {
                 errorMessage = error.localizedDescription
@@ -545,12 +581,12 @@ struct ItemDetailView: View {
     }
 
     private var heroImageURL: URL? {
-        // Episodes frequently lack Backdrop art. We must avoid constructing an Episode Backdrop URL
-        // first because it will be non-nil, but commonly 404. That results in a permanent placeholder
-        // instead of our intended Season/Series fallbacks.
-        //
-        // For non-episodes, `Backdrop` is typically valid (Jellyfin serves the first backdrop even
-        // without a tag), so we keep the simpler path.
+        // Episodes frequently lack Backdrop art. Fall back to Season/Series artwork.
+        // (Backdrop preferred for hero; Primary as a final fallback.)
+        if let url = session.itemImageURL(for: item, kind: "Backdrop", maxWidth: 1600) {
+            return url
+        }
+
         if isEpisode {
             if let seasonId = item.seasonId {
                 if let url = session.itemImageURL(itemId: seasonId, kind: "Backdrop", maxWidth: 1600) {
@@ -573,16 +609,9 @@ struct ItemDetailView: View {
                     return url
                 }
             }
-            // If the episode itself has a Primary image, use it as a last resort.
-            return session.itemImageURL(for: item, kind: "Primary", maxWidth: 1200)
         }
 
-        // Non-episodes: Backdrop preferred for hero; Primary as a final fallback.
-        if let url = session.itemImageURL(for: item, kind: "Backdrop", maxWidth: 1600) {
-            return url
-        }
-
-        return session.itemImageURL(for: item, kind: "Primary", maxWidth: 1200)
+        return session.itemImageURL(for: item, maxWidth: 1200)
     }
 
     private var isEpisode: Bool {
@@ -882,8 +911,10 @@ private func technicalChips(from source: JellyfinClient.PlaybackMediaSource) -> 
 // MARK: - Supporting Views
 
 private struct PresentedPlayerURL: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
+    let itemId: String
+    let context: SessionStore.PlaybackContext
+    let startPositionTicks: Int
+    var id: String { itemId }
 }
 
 private struct PosterImageURLView: View {
@@ -911,7 +942,55 @@ private struct PosterImageURLView: View {
         }
         .clipped()
     }
+
 }
+
+private struct PosterImageFallbackView: View {
+    let urls: [URL]
+
+    @State private var index: Int = 0
+
+    var body: some View {
+        Group {
+            if let url = urls[safe: index] {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        placeholder
+                    case .success(let img):
+                        img.resizable().scaledToFill()
+                    case .failure:
+                        placeholder
+                            .onAppear {
+                                if index + 1 < urls.count {
+                                    index += 1
+                                }
+                            }
+                    @unknown default:
+                        placeholder
+                    }
+                }
+            } else {
+                placeholder
+            }
+        }
+        .clipped()
+    }
+
+    private var placeholder: some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(.white.opacity(0.08))
+            .overlay(Image(systemName: "film").foregroundStyle(.white.opacity(0.6)))
+    }
+}
+
+private extension Array {
+    subscript(safe idx: Int) -> Element? {
+        guard idx >= 0, idx < count else { return nil }
+        return self[idx]
+    }
+}
+
 
 private struct PersonAvatar: View {
     let url: URL?

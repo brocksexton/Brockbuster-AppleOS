@@ -142,6 +142,7 @@ struct SeasonDetailView_Previews: PreviewProvider {
             primaryImageTag: nil,
             overview: nil,
             productionYear: nil,
+            premiereDate: nil,
             indexNumber: 1,
             parentIndexNumber: nil,
             seriesId: nil,

@@ -505,6 +505,7 @@ struct UserData: Decodable {
         // Optional rich fields (present depending on endpoint / item type)
         let overview: String?
         let productionYear: Int?
+        let premiereDate: String?
         let indexNumber: Int?
         let parentIndexNumber: Int?
 
@@ -525,6 +526,7 @@ struct UserData: Decodable {
             case primaryImageTag = "PrimaryImageTag"
             case overview = "Overview"
             case productionYear = "ProductionYear"
+            case premiereDate = "PremiereDate"
             case indexNumber = "IndexNumber"
             case parentIndexNumber = "ParentIndexNumber"
             case seriesId = "SeriesId"
@@ -546,6 +548,7 @@ struct UserData: Decodable {
         let mediaType: String?
         let runTimeTicks: Int?
         let productionYear: Int?
+        let premiereDate: String?
         let communityRating: Double?
         let primaryImageTag: String?
         let genres: [String]?
@@ -561,6 +564,7 @@ struct UserData: Decodable {
             case mediaType = "MediaType"
             case runTimeTicks = "RunTimeTicks"
             case productionYear = "ProductionYear"
+            case premiereDate = "PremiereDate"
             case communityRating = "CommunityRating"
             case primaryImageTag = "PrimaryImageTag"
             case genres = "Genres"
@@ -580,25 +584,14 @@ struct UserData: Decodable {
     // MARK: - Image URL helpers for items
 
     /// Construct a URL for an item's image of the requested kind (Primary/Backdrop/Thumb/etc).
-    /// If an image tag is available it is appended as a query parameter. Optionally specify
-    /// a maximum width to request a resized image.
+    ///
+    /// IMPORTANT:
+    /// `PrimaryImageTag` only applies to the **Primary** image. Using it for Backdrop/Thumb
+    /// produces invalid URLs for many item types (notably Episodes) and can cause images to
+    /// fail to load. For non-primary kinds we omit the tag unless a caller explicitly
+    /// provides one.
     func itemImageURL(for item: LibraryItem, kind: String = "Primary", maxWidth: Int? = nil) -> URL? {
-        let base = baseURL.appendingPathComponent("Items/\(item.id)/Images/\(kind)")
-        if let tag = item.primaryImageTag {
-            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
-            var q: [URLQueryItem] = [URLQueryItem(name: "tag", value: tag)]
-            if let maxWidth {
-                q.append(URLQueryItem(name: "maxWidth", value: String(maxWidth)))
-            }
-            components?.queryItems = q
-            return components?.url ?? base
-        } else {
-            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
-            if let maxWidth {
-                components?.queryItems = [URLQueryItem(name: "maxWidth", value: String(maxWidth))]
-            }
-            return components?.url ?? base
-        }
+        itemImageURL(itemId: item.id, kind: kind, tag: (kind == "Primary" ? item.primaryImageTag : nil), maxWidth: maxWidth)
     }
 
     /// Backwards-compatible convenience (Primary).
@@ -607,23 +600,25 @@ struct UserData: Decodable {
     }
 
     /// Construct a URL for a detailed item's image of the requested kind (Primary/Backdrop/Thumb/etc).
+    /// See notes above regarding tags.
     func itemImageURL(for detail: ItemDetail, kind: String = "Primary", maxWidth: Int? = nil) -> URL? {
-        let base = baseURL.appendingPathComponent("Items/\(detail.id)/Images/\(kind)")
-        if let tag = detail.primaryImageTag {
-            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
-            var q: [URLQueryItem] = [URLQueryItem(name: "tag", value: tag)]
-            if let maxWidth {
-                q.append(URLQueryItem(name: "maxWidth", value: String(maxWidth)))
-            }
-            components?.queryItems = q
-            return components?.url ?? base
-        } else {
-            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
-            if let maxWidth {
-                components?.queryItems = [URLQueryItem(name: "maxWidth", value: String(maxWidth))]
-            }
-            return components?.url ?? base
+        itemImageURL(itemId: detail.id, kind: kind, tag: (kind == "Primary" ? detail.primaryImageTag : nil), maxWidth: maxWidth)
+    }
+
+    /// Construct a URL for an item's image when you only have its ID (e.g. fallback to Series/Season art).
+    /// If `tag` is provided, it will be appended as a query parameter.
+    func itemImageURL(itemId: String, kind: String = "Primary", tag: String? = nil, maxWidth: Int? = nil) -> URL? {
+        let base = baseURL.appendingPathComponent("Items/\(itemId)/Images/\(kind)")
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        var q: [URLQueryItem] = []
+        if let tag, !tag.isEmpty {
+            q.append(URLQueryItem(name: "tag", value: tag))
         }
+        if let maxWidth {
+            q.append(URLQueryItem(name: "maxWidth", value: String(maxWidth)))
+        }
+        components?.queryItems = q.isEmpty ? nil : q
+        return components?.url ?? base
     }
 
     /// Backwards-compatible convenience (Primary).

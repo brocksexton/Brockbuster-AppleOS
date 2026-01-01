@@ -502,6 +502,12 @@ func personImageURL(for person: JellyfinClient.Person, maxWidth: Int? = nil) -> 
         return client.itemImageURL(for: detail, kind: kind, maxWidth: maxWidth)
     }
 
+    /// Construct the URL for an item image when you only have the item's ID.
+    /// Useful for fallbacks such as Series/Season artwork when an Episode lacks images.
+    func itemImageURL(itemId: String, kind: String = "Primary", maxWidth: Int? = nil) -> URL? {
+        return client.itemImageURL(itemId: itemId, kind: kind, tag: nil, maxWidth: maxWidth)
+    }
+
     /// Fetch detailed information for a specific item.  Must be called after the user has
     /// logged in.  Returns an `ItemDetail` on success or throws on failure.
     func fetchItemDetails(itemId: String) async throws -> JellyfinClient.ItemDetail {
@@ -569,6 +575,7 @@ func resolvePrimaryEpisodeForSeries(seriesId: String) async throws -> JellyfinCl
             primaryImageTag: nil,
             overview: nil,
             productionYear: nil,
+            premiereDate: nil,
             indexNumber: nil,
             parentIndexNumber: nil,
             seriesId: nil,

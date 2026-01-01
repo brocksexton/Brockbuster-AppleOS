@@ -370,6 +370,45 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    /// Fetch the current user's favourite items.
+    ///
+    /// Jellyfin exposes favourites via `Filters=IsFavorite` on the standard
+    /// `/Users/{userId}/Items` endpoint.  We page to ensure larger favourite
+    /// libraries load reliably.
+    func fetchFavouriteItems(limit: Int = 150) async throws -> [JellyfinClient.LibraryItem] {
+        guard let userId = currentUser?.id else { return [] }
+
+        let pageSize = min(max(limit, 1), 200)
+        var startIndex = 0
+        var all: [JellyfinClient.LibraryItem] = []
+        var seen = Set<String>()
+
+        while all.count < limit {
+            let remaining = limit - all.count
+            let requestSize = min(pageSize, remaining)
+            let page: [JellyfinClient.LibraryItem] = try await withCheckedThrowingContinuation { continuation in
+                client.fetchFavouriteItems(userId: userId, limit: requestSize, startIndex: startIndex) { result in
+                    switch result {
+                    case .success(let items):
+                        continuation.resume(returning: items)
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+
+            let newItems = page.filter { seen.insert($0.id).inserted }
+            all.append(contentsOf: newItems)
+
+            if page.count < requestSize || newItems.isEmpty {
+                break
+            }
+            startIndex += requestSize
+        }
+
+        return all
+    }
+
     /// Fetch the child items of a given library item (e.g. seasons of a series,
     /// episodes of a season, or contents of a collection).  Uses the same
     /// underlying API as `fetchItems(for: LibraryView)`.  Does not cache by
@@ -601,6 +640,27 @@ func personImageURL(for person: JellyfinClient.Person, maxWidth: Int? = nil) -> 
                 switch result {
                 case .success(let detail):
                     continuation.resume(returning: detail)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+
+    // MARK: - Favorites
+
+    /// Toggle an item's favorite status on the Jellyfin server so the change is reflected
+    /// across all clients (Jellyfin Web, mobile apps, etc.).
+    func setFavorite(itemId: String, isFavorite: Bool) async throws {
+        guard let userId = currentUser?.id else {
+            throw JellyfinClient.NetworkError.invalidResponse
+        }
+        try await withCheckedThrowingContinuation { continuation in
+            client.setFavorite(itemId: itemId, userId: userId, isFavorite: isFavorite) { result in
+                switch result {
+                case .success:
+                    continuation.resume(returning: ())
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 }

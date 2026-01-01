@@ -25,6 +25,9 @@ struct ItemDetailView: View {
     @State private var playbackSubtitle: String = ""
     @State private var playerSheet: PresentedPlayerURL?
 
+    @State private var isTogglingFavorite: Bool = false
+    @State private var favoriteOverride: Bool? = nil
+
     var body: some View {
         ZStack {
             background.ignoresSafeArea()
@@ -369,6 +372,23 @@ private var actionRow: some View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
+
+            Button {
+                Task { await toggleFavorite() }
+            } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
+
+                    Image(systemName: isFavorite ? "heart.fill" : "heart")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(isFavorite ? BrockbusterTheme.ticketYellow : BrockbusterTheme.textPrimary)
+                        .padding(12)
+                }
+                .frame(width: 52, height: 52)
+            }
+            .buttonStyle(.plain)
+            .disabled(isTogglingFavorite || detail == nil || session.currentUser == nil)
         }
     }
 
@@ -460,6 +480,7 @@ private var actionRow: some View {
         if isLoading { return }
         isLoading = true
         errorMessage = nil
+        favoriteOverride = nil
 
         do {
             async let d = session.fetchItemDetails(itemId: item.id)
@@ -476,6 +497,29 @@ private var actionRow: some View {
         }
 
         isLoading = false
+    }
+
+    // MARK: - Favorites
+
+    @MainActor
+    private func toggleFavorite() async {
+        guard detail != nil else { return }
+        guard session.currentUser != nil else { return }
+
+        let newValue = !isFavorite
+        isTogglingFavorite = true
+        favoriteOverride = newValue
+
+        do {
+            try await session.setFavorite(itemId: item.id, isFavorite: newValue)
+            favoriteOverride = nil
+            await loadAll()
+        } catch {
+            favoriteOverride = nil
+            errorMessage = error.localizedDescription
+        }
+
+        isTogglingFavorite = false
     }
 
     // MARK: - Playback
@@ -757,6 +801,11 @@ private func technicalChips(from source: JellyfinClient.PlaybackMediaSource) -> 
     private enum WatchState { case notStarted, inProgress, watched }
 
     private var resolvedUserData: JellyfinClient.UserData? { detail?.userData ?? item.userData }
+
+    private var isFavorite: Bool {
+        if let override = favoriteOverride { return override }
+        return resolvedUserData?.isFavorite ?? false
+    }
 
     private var shouldShowWatchStatus: Bool {
         resolvedUserData?.played != nil || (resolvedUserData?.playbackPositionTicks ?? 0) > 0

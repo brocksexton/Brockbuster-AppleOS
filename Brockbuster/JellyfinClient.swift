@@ -466,6 +466,69 @@ final class JellyfinClient {
         task.resume()
     }
 
+    /// Fetch the current user's favourite items.
+    ///
+    /// This uses `/Users/{userId}/Items` with `Filters=IsFavorite` so Jellyfin
+    /// returns only items the user has favourited.  We include the most common
+    /// favouritable item types used by Brockbuster.
+    func fetchFavouriteItems(
+        userId: String,
+        limit: Int = 100,
+        startIndex: Int = 0,
+        completion: @escaping (Result<[LibraryItem], Error>) -> Void
+    ) {
+        var components = URLComponents(url: baseURL.appendingPathComponent("Users/\(userId)/Items"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "StartIndex", value: String(startIndex)),
+            URLQueryItem(name: "Limit", value: String(limit)),
+            URLQueryItem(name: "SortBy", value: "SortName"),
+            URLQueryItem(name: "SortOrder", value: "Ascending"),
+            URLQueryItem(name: "Filters", value: "IsFavorite"),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "IncludeItemTypes", value: "Movie,Series,BoxSet,Episode"),
+            URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,Overview,CommunityRating,ProductionYear,RunTimeTicks,ParentId,ImageTags,BackdropImageTags,ParentIndexNumber,IndexNumber,SortName,PremiereDate,UserData,SeriesId,SeasonId,SeriesName"),
+            URLQueryItem(name: "EnableImageTypes", value: "Primary,Backdrop,Thumb"),
+            URLQueryItem(name: "ImageTypeLimit", value: "1")
+        ]
+        guard let url = components.url else {
+            DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(buildAuthorizationHeader(withToken: accessToken), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue("Brockbuster/\(appVersion) (SwiftUI; Darwin)", forHTTPHeaderField: "User-Agent")
+
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
+            guard let http = response as? HTTPURLResponse else {
+                DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
+                return
+            }
+            guard (200...299).contains(http.statusCode) else {
+                DispatchQueue.main.async { completion(.failure(NetworkError.httpStatus(code: http.statusCode))) }
+                return
+            }
+            guard let data = data else {
+                DispatchQueue.main.async { completion(.failure(NetworkError.emptyResponse)) }
+                return
+            }
+            do {
+                let wrapper = try JSONDecoder().decode(ItemsResponse.self, from: data)
+                DispatchQueue.main.async { completion(.success(wrapper.items)) }
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+            }
+        }
+        task.resume()
+    }
+
     // MARK: - Response structs
 
     private struct ViewsResponse: Decodable {
@@ -476,18 +539,22 @@ final class JellyfinClient {
         }
     }
 
-    /// Represents per-user playback data attached to items when requested via the `Fields=UserData` parameter.
-struct UserData: Decodable {
-    let playbackPositionTicks: Int?
-    let played: Bool?
-    let lastPlayedDate: String?
+    /// Represents per-user data attached to items when requested via the `Fields=UserData` parameter.
+    ///
+    /// We rely on this for playback progress (resume), watched state, and favorites.
+    struct UserData: Decodable {
+        let playbackPositionTicks: Int?
+        let played: Bool?
+        let lastPlayedDate: String?
+        let isFavorite: Bool?
 
-    enum CodingKeys: String, CodingKey {
-        case playbackPositionTicks = "PlaybackPositionTicks"
-        case played = "Played"
-        case lastPlayedDate = "LastPlayedDate"
+        enum CodingKeys: String, CodingKey {
+            case playbackPositionTicks = "PlaybackPositionTicks"
+            case played = "Played"
+            case lastPlayedDate = "LastPlayedDate"
+            case isFavorite = "IsFavorite"
+        }
     }
-}
 
     /// Represents a media item inside a library.  Only includes a subset of fields that are
     /// useful for browsing.  You can extend this struct with additional properties as
@@ -694,6 +761,49 @@ struct UserData: Decodable {
             } catch {
                 DispatchQueue.main.async { completion(.failure(error)) }
             }
+        }
+        task.resume()
+    }
+
+
+    // MARK: - Favorites
+
+    /// Add or remove an item from the user's favorites. This writes directly to Jellyfin
+    /// so the favorite state appears in other clients (Jellyfin Web, mobile, etc.).
+    ///
+    /// - Parameters:
+    ///   - itemId: The Jellyfin item ID.
+    ///   - userId: The Jellyfin user ID.
+    ///   - isFavorite: Pass `true` to favorite (POST) or `false` to un-favorite (DELETE).
+    ///   - completion: Completion called on the main queue.
+    func setFavorite(
+        itemId: String,
+        userId: String,
+        isFavorite: Bool,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        let endpoint = baseURL.appendingPathComponent("Users/\(userId)/FavoriteItems/\(itemId)")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = isFavorite ? "POST" : "DELETE"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(buildAuthorizationHeader(withToken: accessToken), forHTTPHeaderField: "X-Emby-Authorization")
+        request.setValue("Brockbuster/\(appVersion) (SwiftUI; Darwin)", forHTTPHeaderField: "User-Agent")
+
+        let task = URLSession.shared.dataTask(with: request) { _, response, error in
+            if let error = error {
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
+            guard let http = response as? HTTPURLResponse else {
+                DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
+                return
+            }
+            guard (200...299).contains(http.statusCode) else {
+                DispatchQueue.main.async { completion(.failure(NetworkError.httpStatus(code: http.statusCode))) }
+                return
+            }
+            DispatchQueue.main.async { completion(.success(())) }
         }
         task.resume()
     }

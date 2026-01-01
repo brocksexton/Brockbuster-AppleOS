@@ -11,6 +11,7 @@ struct MyBrockbusterView: View {
 
     @State private var resumeItems: [JellyfinClient.LibraryItem] = []
     @State private var historyItems: [JellyfinClient.LibraryItem] = []
+    @State private var favouriteItems: [JellyfinClient.LibraryItem] = []
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
 
@@ -67,6 +68,20 @@ struct MyBrockbusterView: View {
                                 }
                                 .buttonStyle(.plain)
                             }
+                        }
+                    }
+
+                    if !favouriteItems.isEmpty {
+                        sectionHeader(title: "Favourites", subtitle: "Saved picks across Jellyfin") {
+                            NavigationLink {
+                                FavouritesView().environmentObject(session)
+                            } label: {
+                                Text("See all")
+                            }
+                        }
+
+                        HorizontalPosterRail(items: favouriteItems.prefix(16).map { $0 }) { item in
+                            destination(for: item)
                         }
                     }
 
@@ -134,10 +149,7 @@ struct MyBrockbusterView: View {
 
             HStack(spacing: 10) {
                 NavigationLink {
-                    ComingSoonView(
-                        title: "Favourites",
-                        message: "A dedicated favourites list is coming soon. For now, you can favourite items in Jellyfin and we’ll surface them here."
-                    )
+                    FavouritesView().environmentObject(session)
                 } label: {
                     QuickActionCard(
                         icon: "heart.fill",
@@ -217,9 +229,11 @@ struct MyBrockbusterView: View {
         do {
             async let resume = session.fetchResumeItems(limit: 18)
             async let history = session.fetchWatchHistory(limit: 24)
+            async let favs = session.fetchFavouriteItems(limit: 60)
             let (r, h) = try await (resume, history)
             resumeItems = r
             historyItems = h
+            favouriteItems = (try? await favs) ?? []
             isLoading = false
         } catch {
             isLoading = false
@@ -552,6 +566,167 @@ private struct WatchHistoryView: View {
         errorMessage = nil
         do {
             items = try await session.fetchWatchHistory(limit: 250)
+            isLoading = false
+        } catch {
+            isLoading = false
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct FavouritesView: View {
+    @EnvironmentObject private var session: SessionStore
+    @Environment(\.horizontalSizeClass) private var hSize
+
+    @State private var items: [JellyfinClient.LibraryItem] = []
+    @State private var isLoading: Bool = false
+    @State private var errorMessage: String?
+    @State private var layout: Layout = .grid
+
+    private enum Layout: String, CaseIterable, Identifiable {
+        case grid
+        case list
+        var id: String { rawValue }
+    }
+
+    private var columns: [GridItem] {
+        // Slightly tighter on compact iPhone, more breathing room on iPad/tvOS.
+        let minWidth: CGFloat = (hSize == .regular) ? 170 : 140
+        return [GridItem(.adaptive(minimum: minWidth), spacing: 12, alignment: .top)]
+    }
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                gradient: Gradient(colors: [BrockbusterTheme.brockDark.opacity(0.60), BrockbusterTheme.brockBlue.opacity(0.55)]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    header
+
+                    if isLoading {
+                        ProgressView().tint(BrockbusterTheme.brockGold)
+                            .padding(.top, 4)
+                    }
+                    if let errorMessage = errorMessage {
+                        ErrorPill(text: errorMessage)
+                    }
+
+                    if items.isEmpty && !isLoading && errorMessage == nil {
+                        emptyState
+                    } else {
+                        content
+                    }
+
+                    Spacer(minLength: 20)
+                }
+                .padding(16)
+            }
+        }
+        .navigationTitle("Favourites")
+        #if !os(macOS)
+        .bbNavigationTitleInline()
+        #endif
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Your Favourites")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(BrockbusterTheme.brockLight)
+                Text("Synced with Jellyfin")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(BrockbusterTheme.brockLight.opacity(0.78))
+            }
+            Spacer(minLength: 0)
+            Picker("Layout", selection: $layout) {
+                Text("Grid").tag(Layout.grid)
+                Text("List").tag(Layout.list)
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 240)
+        }
+        .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch layout {
+        case .grid:
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(items) { item in
+                    NavigationLink {
+                        destination(for: item)
+                    } label: {
+                        PosterCard(item: item)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+        case .list:
+            VStack(spacing: 10) {
+                ForEach(items) { item in
+                    NavigationLink {
+                        destination(for: item)
+                    } label: {
+                        HistoryRow(item: item)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "heart.slash")
+                .font(.system(size: 42, weight: .bold))
+                .foregroundColor(BrockbusterTheme.brockGold)
+
+            Text("No favourites yet")
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundColor(BrockbusterTheme.brockLight)
+
+            Text("Tap the heart on any movie, show, or collection to save it here. This list is shared across all Jellyfin clients.")
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(BrockbusterTheme.brockLight.opacity(0.82))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 28)
+        .padding(18)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(.white.opacity(0.10), lineWidth: 1)
+        )
+    }
+
+    private func destination(for item: JellyfinClient.LibraryItem) -> some View {
+        if item.mediaType == "Series" || (item.type ?? "").lowercased() == "series" {
+            return AnyView(SeriesDetailView(series: item).environmentObject(session))
+        }
+        if item.mediaType == "BoxSet" || (item.type ?? "").lowercased() == "boxset" {
+            return AnyView(CollectionDetailView(collection: item).environmentObject(session))
+        }
+        return AnyView(ItemDetailView(item: item).environmentObject(session))
+    }
+
+    private func load() async {
+        guard session.isLoggedIn else { return }
+        isLoading = true
+        errorMessage = nil
+        do {
+            items = try await session.fetchFavouriteItems(limit: 500)
             isLoading = false
         } catch {
             isLoading = false

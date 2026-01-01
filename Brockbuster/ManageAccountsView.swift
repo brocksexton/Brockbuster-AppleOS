@@ -28,6 +28,7 @@ struct ManageAccountsView: View {
                             ))
                             .labelsHidden()
                         }
+                        #if !os(tvOS)
                         .swipeActions {
                             Button(role: .destructive) {
                                 accounts.removeAccount(acct.id)
@@ -35,6 +36,7 @@ struct ManageAccountsView: View {
                                 Label("Remove", systemImage: "trash")
                             }
                         }
+                        #endif
                     }
                 }
             }

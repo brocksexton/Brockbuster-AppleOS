@@ -50,7 +50,9 @@ final class NowPlayingManager: ObservableObject {
         let title: String
         let subtitle: String?
         let posterURL: URL?
-        let playbackContext: SessionStore.PlaybackContext
+        /// Playback context (playSessionId/mediaSourceId) used for reporting.
+        /// This may be nil briefly while we are fetching the playback URL.
+        let playbackContext: SessionStore.PlaybackContext?
         let startPositionTicks: Int
 
         // Optional structured episode context (improves Now Playing + Dynamic Island display)
@@ -68,6 +70,17 @@ final class NowPlayingManager: ObservableObject {
 
     /// The currently playing item (if any).
     @Published private(set) var item: NowPlayingItem?
+
+    /// True while we are preparing a stream URL / play session.
+    /// Used to present the fullscreen player immediately with a loading UI
+    /// so audio does not begin "behind" the transition.
+    @Published private(set) var isPreparingPlayback: Bool = false
+
+    /// True while we are fetching a playback context and preparing the player.
+    /// Used to present the fullscreen player immediately with a lightweight
+    /// loading overlay so audio does not "start in the background" before the
+    /// UI appears.
+    @Published private(set) var isPreparingPlayback: Bool = false
 
     /// If present, the user is near the end of an episode and we are offering an
     /// autoplay transition to the next episode.
@@ -196,27 +209,16 @@ final class NowPlayingManager: ObservableObject {
             do {
                 self.sessionRef = session
 
-                let context = try await session.playbackContext(for: itemId)
+                // Present the fullscreen player immediately so the transition
+                // begins right away, then resolve the playback context.
+                isPreparingPlayback = true
+                isPlayerPresented = true
+
                 let episodeContext: EpisodeContext? = {
                     guard mediaKind == .episode else { return nil }
                     guard let seriesIdForEpisode, !seriesIdForEpisode.isEmpty else { return nil }
                     return EpisodeContext(seriesId: seriesIdForEpisode)
                 }()
-
-                let newItem = NowPlayingItem(
-                    id: itemId,
-                    title: title,
-                    subtitle: subtitle,
-                    posterURL: posterURL,
-                    playbackContext: context,
-                    startPositionTicks: startPositionTicks,
-                    seriesTitle: seriesTitle,
-                    seasonNumber: seasonNumber,
-                    episodeNumber: episodeNumber,
-                    episodeTitle: episodeTitle,
-                    mediaKind: mediaKind,
-                    episodeContext: episodeContext
-                )
 
                 // Replace any existing playback.
                 #if canImport(MediaPlayer)
@@ -229,13 +231,56 @@ final class NowPlayingManager: ObservableObject {
 
                 teardownPlayer()
 
-                item = newItem
+                // Set a provisional item so the UI has a title/subtitle/poster
+                // while we fetch the stream URL.
+                item = NowPlayingItem(
+                    id: itemId,
+                    title: title,
+                    subtitle: subtitle,
+                    posterURL: posterURL,
+                    playbackContext: nil,
+                    startPositionTicks: startPositionTicks,
+                    seriesTitle: seriesTitle,
+                    seasonNumber: seasonNumber,
+                    episodeNumber: episodeNumber,
+                    episodeTitle: episodeTitle,
+                    mediaKind: mediaKind,
+                    episodeContext: episodeContext
+                )
+
                 upNext = nil
                 introWindow = nil
                 hasPreparedUpNext = false
                 autoplayCancelled = false
+
+                // Resolve playback context (network call) after presentation has started.
+                let context = try await session.playbackContext(for: itemId)
+
+                // Allow the fullscreen cover to finish its initial commit before
+                // starting audio playback (prevents audio/Now Playing bar from
+                // appearing "behind" the transition).
+                await Task.yield()
+
+                // Update item with the resolved context.
+                if let current = self.item, current.id == itemId {
+                    self.item = NowPlayingItem(
+                        id: itemId,
+                        title: title,
+                        subtitle: subtitle,
+                        posterURL: posterURL,
+                        playbackContext: context,
+                        startPositionTicks: startPositionTicks,
+                        seriesTitle: seriesTitle,
+                        seasonNumber: seasonNumber,
+                        episodeNumber: episodeNumber,
+                        episodeTitle: episodeTitle,
+                        mediaKind: mediaKind,
+                        episodeContext: episodeContext
+                    )
+                }
+
                 setupPlayer(url: context.url, startPositionTicks: startPositionTicks)
-                isPlayerPresented = true
+                isPreparingPlayback = false
 
                 #if canImport(MediaPlayer)
                 configureAudioSessionForPlaybackIfPossible()
@@ -271,6 +316,7 @@ final class NowPlayingManager: ObservableObject {
                 teardownPlayer()
                 item = nil
                 isPlayerPresented = false
+                isPreparingPlayback = false
             }
         }
     }
@@ -523,10 +569,11 @@ final class NowPlayingManager: ObservableObject {
         guard !hasReportedStart else { return }
         guard let item else { return }
         guard let session = sessionRef else { return }
+        guard let context = item.playbackContext else { return }
 
         hasReportedStart = true
         await session.reportPlaybackStarted(
-            context: item.playbackContext,
+            context: context,
             itemId: item.id,
             positionTicks: currentPositionTicks,
             isPaused: false
@@ -536,10 +583,11 @@ final class NowPlayingManager: ObservableObject {
     private func reportProgress() async {
         guard let item else { return }
         guard let session = sessionRef else { return }
+        guard let context = item.playbackContext else { return }
 
         await reportStartedIfNeeded()
         await session.reportPlaybackProgress(
-            context: item.playbackContext,
+            context: context,
             itemId: item.id,
             positionTicks: currentPositionTicks,
             isPaused: !isPlaying
@@ -549,9 +597,10 @@ final class NowPlayingManager: ObservableObject {
     private func reportStopped(playedToCompletion: Bool, failed: Bool) async {
         guard let item else { return }
         guard let session = sessionRef else { return }
+        guard let context = item.playbackContext else { return }
 
         await session.reportPlaybackStopped(
-            context: item.playbackContext,
+            context: context,
             itemId: item.id,
             positionTicks: currentPositionTicks,
             playedToCompletion: playedToCompletion,

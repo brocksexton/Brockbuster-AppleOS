@@ -30,6 +30,27 @@ struct NowPlayingFullscreenView: View {
                     .onTapGesture { handleToggleOverlay() }
             }
 
+            // Loading state: show while we are obtaining the stream URL / play session.
+            if nowPlaying.currentPlayer() == nil || nowPlaying.isPreparingPlayback {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Loading…")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
+                    .padding(.bottom, 34)
+                }
+                .transition(.opacity)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
+
             if overlayVisible {
                 overlay
                     .transition(.opacity)

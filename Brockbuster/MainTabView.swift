@@ -50,10 +50,15 @@ struct MainTabView: View {
                 // Now Playing bar
                 // Position it above the tab bar + home indicator so it doesn't collide with
                 // the system UI. This also keeps it consistent across device sizes.
-                NowPlayingBar()
-                    .environmentObject(nowPlaying)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, nowPlayingBarBottomPadding(safeBottom: geo.safeAreaInsets.bottom))
+                // Hide the mini-player while the fullscreen player is being presented.
+                // This avoids the visual oddity where audio begins and the mini-player
+                // appears before the fullscreen cover finishes animating.
+                if nowPlaying.hasActiveItem && nowPlaying.isPlayerPresented == false {
+                    NowPlayingBar()
+                        .environmentObject(nowPlaying)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, nowPlayingBarBottomPadding(safeBottom: geo.safeAreaInsets.bottom))
+                }
             }
         }
         .tint(BrockbusterTheme.brockGold)

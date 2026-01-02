@@ -75,6 +75,8 @@ struct SettingsTab: View {
 
     @AppStorage("settings.defaultRememberAccount") private var defaultRememberAccount: Bool = true
     @AppStorage("settings.showAccountChooserOnLaunch") private var showAccountChooserOnLaunch: Bool = true
+    @AppStorage("onboarding.didComplete") private var didCompleteOnboarding: Bool = false
+    @AppStorage("onboarding.preferSkip") private var preferSkipOnboarding: Bool = false
 
     @State private var clearCacheOnLogout: Bool = false
     @State private var preferDarkMode: Bool = true
@@ -115,6 +117,14 @@ struct SettingsTab: View {
                 Toggle("Clear Cache on Logout", isOn: $clearCacheOnLogout)
                 Toggle("Default to remembering accounts", isOn: $defaultRememberAccount)
                 Toggle("Show account chooser on launch", isOn: $showAccountChooserOnLaunch)
+
+                Button {
+                    // Reset the tour flags so it will appear on next launch.
+                    didCompleteOnboarding = false
+                    preferSkipOnboarding = false
+                } label: {
+                    Label("Show welcome tour on next launch", systemImage: "sparkles")
+                }
             }
 
             Section(header: Text("About")) {

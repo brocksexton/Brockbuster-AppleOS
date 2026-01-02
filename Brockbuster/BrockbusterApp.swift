@@ -21,7 +21,9 @@ struct BrockbusterApp: App {
     var body: some Scene {
         WindowGroup {
             // Top-level navigation is controlled by the session's login state
-            contentView()
+            OnboardingHostView {
+                contentView()
+            }
                 .environmentObject(session)
                 .environmentObject(accountManager)
                 .environmentObject(nowPlaying)

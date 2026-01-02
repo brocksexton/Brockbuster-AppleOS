@@ -51,6 +51,27 @@ final class JellyfinClient {
 
     // MARK: - API models
 
+    // MARK: - Media Segments (Skip Intro)
+
+    struct MediaSegment: Decodable, Equatable {
+        let type: String?
+        let startTicks: Int?
+        let endTicks: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case type = "Type"
+            case startTicks = "StartTicks"
+            case endTicks = "EndTicks"
+        }
+    }
+
+    private struct MediaSegmentsResponse: Decodable {
+        let items: [MediaSegment]
+        enum CodingKeys: String, CodingKey {
+            case items = "Items"
+        }
+    }
+
     /// Encodes the payload for the login request.  Note that the password field for
     /// Jellyfin is called `Pw` in the API and must be sent in plaintext【261741302448544†L73-L88】.
     private struct AuthenticateRequest: Encodable {
@@ -919,6 +940,53 @@ func fetchNextUpEpisode(seriesId: String, userId: String, completion: @escaping 
         do {
             let wrapper = try JSONDecoder().decode(ItemsResponse.self, from: data)
             DispatchQueue.main.async { completion(.success(wrapper.items.first)) }
+        } catch {
+            DispatchQueue.main.async { completion(.failure(error)) }
+        }
+    }
+    task.resume()
+}
+
+
+// MARK: - Media Segments (Skip Intro)
+
+/// Fetch media segments for an item via `/MediaSegments/{id}`.
+/// If the server does not provide segments, this will return an empty array.
+func fetchMediaSegments(itemId: String, completion: @escaping (Result<[MediaSegment], Error>) -> Void) {
+    let endpoint = baseURL.appendingPathComponent("MediaSegments").appendingPathComponent(itemId)
+    var request = URLRequest(url: endpoint)
+    request.httpMethod = "GET"
+    request.timeoutInterval = 20
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue(buildAuthorizationHeader(withToken: accessToken), forHTTPHeaderField: "X-Emby-Authorization")
+    request.setValue("Brockbuster/\(appVersion) (SwiftUI; Darwin)", forHTTPHeaderField: "User-Agent")
+
+    let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        if let error = error {
+            DispatchQueue.main.async { completion(.failure(error)) }
+            return
+        }
+        guard let http = response as? HTTPURLResponse else {
+            DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
+            return
+        }
+        guard (200...299).contains(http.statusCode) else {
+            DispatchQueue.main.async { completion(.failure(NetworkError.httpStatus(code: http.statusCode))) }
+            return
+        }
+        guard let data else {
+            DispatchQueue.main.async { completion(.success([])) }
+            return
+        }
+
+        // Jellyfin may respond either as an array or as { Items: [...] } depending on version.
+        do {
+            if let arr = try? JSONDecoder().decode([MediaSegment].self, from: data) {
+                DispatchQueue.main.async { completion(.success(arr)) }
+                return
+            }
+            let wrapped = try JSONDecoder().decode(MediaSegmentsResponse.self, from: data)
+            DispatchQueue.main.async { completion(.success(wrapped.items)) }
         } catch {
             DispatchQueue.main.async { completion(.failure(error)) }
         }

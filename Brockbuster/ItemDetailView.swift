@@ -523,6 +523,8 @@ private var actionRow: some View {
             subtitle: playbackSubtitle,
             posterURL: session.itemImageURL(for: item, maxWidth: 700),
             startPositionTicks: resolvedUserData?.playbackPositionTicks ?? 0,
+            mediaKind: isEpisode ? .episode : .movie,
+            seriesIdForEpisode: item.seriesId,
             session: session
         )
 

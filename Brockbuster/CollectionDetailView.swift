@@ -311,6 +311,7 @@ struct CollectionDetailView: View {
                     subtitle: playbackSubtitle,
                     posterURL: session.itemImageURL(for: collection, maxWidth: 700),
                     startPositionTicks: startTicks,
+                    mediaKind: .movie,
                     session: session
                 )
             }

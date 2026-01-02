@@ -691,6 +691,21 @@ func fetchNextUpEpisode(seriesId: String) async throws -> JellyfinClient.Library
     }
 }
 
+/// Fetch Jellyfin media segments for an item (best-effort). Used for features like
+/// Skip Intro. Returns an empty array if none are available.
+func fetchMediaSegments(itemId: String) async throws -> [JellyfinClient.MediaSegment] {
+    return try await withCheckedThrowingContinuation { continuation in
+        client.fetchMediaSegments(itemId: itemId) { result in
+            switch result {
+            case .success(let segments):
+                continuation.resume(returning: segments)
+            case .failure(let error):
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+}
+
 /// Fetch cast/crew for a given item (movies, series, episodes).
 func fetchPeople(for itemId: String) async throws -> [JellyfinClient.Person] {
     guard let userId = currentUser?.id else { return [] }

@@ -519,6 +519,8 @@ private func playPrimary() async {
                 subtitle: primaryActionSubtitle,
                 posterURL: session.itemImageURL(for: series, maxWidth: 700),
                 startPositionTicks: episode.userData?.playbackPositionTicks ?? 0,
+                mediaKind: .episode,
+                seriesIdForEpisode: episode.seriesId ?? series.id,
                 session: session
             )
         }

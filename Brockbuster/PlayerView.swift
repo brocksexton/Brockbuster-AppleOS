@@ -55,6 +55,10 @@ struct PlayerView: View {
     @State private var isSwitchingStream: Bool = false
     @State private var errorMessage: String?
 
+    // Subtitles (Closed Captions)
+    @State private var subtitlesAvailable: Bool = false
+    @State private var subtitlesEnabled: Bool = false
+
     /// Set to true only when the user explicitly dismisses the player.
     /// We avoid tearing down playback when the app temporarily backgrounds
     /// to improve resume responsiveness.
@@ -213,6 +217,16 @@ struct PlayerView: View {
             let paused = player.timeControlStatus != .playing
             Task { await reportPlaybackProgress(positionTicks: ticks, isPaused: paused) }
         }
+
+        // Subtitles availability can become known shortly after the item is created.
+        // Refresh a couple times to catch late-bound HLS manifests.
+        Task { @MainActor in
+            refreshSubtitlesAvailability(for: player)
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            refreshSubtitlesAvailability(for: player)
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            refreshSubtitlesAvailability(for: player)
+        }
     }
 
     private func detachPlayer() {
@@ -304,6 +318,30 @@ struct PlayerView: View {
             Spacer()
 
             Button {
+                toggleSubtitles()
+                showOverlayNow()
+            } label: {
+                Text("CC")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(subtitlesEnabled ? .black : .white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        Group {
+                            if subtitlesEnabled {
+                                Color.white
+                            } else {
+                                AnyShapeStyle(.ultraThinMaterial)
+                            }
+                        },
+                        in: Capsule()
+                    )
+                    .opacity(subtitlesAvailable ? 1.0 : 0.35)
+            }
+            .disabled(!subtitlesAvailable)
+            .accessibilityLabel(subtitlesEnabled ? "Disable Subtitles" : "Enable Subtitles")
+
+            Button {
                 userInitiatedDismissal = true
                 dismiss()
             } label: {
@@ -350,6 +388,68 @@ struct PlayerView: View {
             withAnimation(.easeInOut(duration: 0.18)) {
                 showOverlay = false
             }
+        }
+    }
+
+    // MARK: - Subtitles / Closed Captions
+
+    @MainActor
+    private func refreshSubtitlesAvailability(for player: AVPlayer?) {
+        guard let item = player?.currentItem else {
+            subtitlesAvailable = false
+            subtitlesEnabled = false
+            return
+        }
+
+        let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: .legible)
+        let options = group?.options ?? []
+        let hasOptions = options.contains { !$0.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        subtitlesAvailable = hasOptions
+
+        // If subtitles were enabled but tracks disappeared (e.g., stream switch), disable.
+        if !hasOptions {
+            subtitlesEnabled = false
+        }
+    }
+
+    @MainActor
+    private func toggleSubtitles() {
+        guard let item = avPlayer?.currentItem,
+              let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else {
+            subtitlesAvailable = false
+            subtitlesEnabled = false
+            return
+        }
+
+        let options = group.options
+        let usableOptions = options.filter { !$0.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        subtitlesAvailable = !usableOptions.isEmpty
+        guard subtitlesAvailable else {
+            subtitlesEnabled = false
+            return
+        }
+
+        if subtitlesEnabled {
+            // Disable subtitles.
+            item.select(nil, in: group)
+            subtitlesEnabled = false
+            return
+        }
+
+        // Enable subtitles: try to pick a preferred option (matches the user's preferred languages) and fall back.
+        let preferredLanguages = Locale.preferredLanguages
+        let preferred = usableOptions.first(where: { opt in
+            guard let locale = opt.locale else { return false }
+            let id = locale.identifier.lowercased()
+            return preferredLanguages.contains(where: { $0.lowercased().hasPrefix(id) })
+        })
+
+        let optionToSelect = preferred ?? usableOptions.first
+        if let optionToSelect {
+            item.select(optionToSelect, in: group)
+            subtitlesEnabled = true
+        } else {
+            subtitlesEnabled = false
         }
     }
 

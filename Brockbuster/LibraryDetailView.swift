@@ -232,7 +232,7 @@ struct LibraryDetailView: View {
         @ViewBuilder
         private var poster: some View {
             if let url = imageURL {
-                AsyncImage(url: url) { phase in
+                BBCachedAsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
                         Rectangle().fill(BrockbusterTheme.brockDark.opacity(0.3))

@@ -521,6 +521,10 @@ private func playPrimary() async {
                 startPositionTicks: episode.userData?.playbackPositionTicks ?? 0,
                 mediaKind: .episode,
                 seriesIdForEpisode: episode.seriesId ?? series.id,
+                seriesTitle: details?.name ?? series.name,
+                seasonNumber: episode.parentIndexNumber,
+                episodeNumber: episode.indexNumber,
+                episodeTitle: episode.name,
                 session: session
             )
         }
@@ -769,7 +773,7 @@ private struct PosterImage: View {
     var body: some View {
         Group {
             if let url = imageURL() {
-                AsyncImage(url: url) { phase in
+                BBCachedAsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
                         placeholder

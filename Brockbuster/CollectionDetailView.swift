@@ -196,7 +196,7 @@ struct CollectionDetailView: View {
     private func itemCard(_ item: JellyfinClient.LibraryItem) -> some View {
         ZStack(alignment: .bottomLeading) {
             if let url = session.itemImageURL(for: item, maxWidth: 400) {
-                AsyncImage(url: url) { phase in
+                BBCachedAsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
                         Rectangle().fill(BrockbusterTheme.brockDark.opacity(0.3))

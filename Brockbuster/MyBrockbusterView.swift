@@ -339,7 +339,7 @@ private struct PosterCard: View {
         ZStack(alignment: .bottomLeading) {
             Group {
                 if let url = session.itemImageURL(for: item, maxWidth: 420) {
-                    AsyncImage(url: url) { phase in
+                    BBCachedAsyncImage(url: url) { phase in
                         switch phase {
                         case .empty:
                             Rectangle().fill(.white.opacity(0.08))
@@ -409,7 +409,7 @@ private struct HistoryRow: View {
         HStack(spacing: 12) {
             ZStack {
                 if let url = session.itemImageURL(for: item, maxWidth: 260) {
-                    AsyncImage(url: url) { phase in
+                    BBCachedAsyncImage(url: url) { phase in
                         switch phase {
                         case .empty:
                             Rectangle().fill(.white.opacity(0.08))

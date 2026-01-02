@@ -32,7 +32,7 @@ struct HomeView: View {
                         if !model.resumeItems.isEmpty {
                             HomeSection(title: "Continue Watching", style: .card) {
                                 HomeRail(items: model.resumeItems) { item in
-                                    AnyView(ItemDetailView(item: item).environmentObject(session))
+                                    ItemDetailView(item: item).environmentObject(session)
                                 }
                             }
                         }
@@ -40,7 +40,7 @@ struct HomeView: View {
                         if !model.recentMovies.isEmpty {
                             HomeSection(title: "Recently Added • Movies", style: .card) {
                                 HomeRail(items: model.recentMovies) { item in
-                                    AnyView(ItemDetailView(item: item).environmentObject(session))
+                                    ItemDetailView(item: item).environmentObject(session)
                                 }
                             }
                         }
@@ -50,9 +50,10 @@ struct HomeView: View {
                                 HomeRail(items: model.recentShows) { item in
                                     let type = (item.type ?? "").lowercased()
                                     if type == "series" {
-                                        return AnyView(SeriesDetailView(series: item).environmentObject(session))
+                                        SeriesDetailView(series: item).environmentObject(session)
+                                    } else {
+                                        ItemDetailView(item: item).environmentObject(session)
                                     }
-                                    return AnyView(ItemDetailView(item: item).environmentObject(session))
                                 }
                             }
                         }
@@ -143,26 +144,26 @@ struct HomeView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 14) {
             if let url = session.userProfileImageURL(maxWidth: 120) {
-                AsyncImage(url: url) { phase in
+                BBCachedAsyncImage(url: url, targetSize: CGSize(width: 108, height: 108)) { phase in
                     switch phase {
                     case .empty:
-                        ProgressView()
-                            .frame(width: 54, height: 54)
+                        AnyView(ProgressView()
+                            .frame(width: 54, height: 54))
                     case .success(let image):
-                        image
+                        AnyView(image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .frame(width: 54, height: 54)
                             .clipShape(Circle())
-                            .overlay(Circle().stroke(BrockbusterTheme.brockGold, lineWidth: 2))
+                            .overlay(Circle().stroke(BrockbusterTheme.brockGold, lineWidth: 2)))
                     case .failure:
-                        Image(systemName: "person.crop.circle.fill")
+                        AnyView(Image(systemName: "person.crop.circle.fill")
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 54, height: 54)
-                            .foregroundColor(BrockbusterTheme.brockGold)
+                            .foregroundColor(BrockbusterTheme.brockGold))
                     @unknown default:
-                        EmptyView()
+                        AnyView(EmptyView())
                     }
                 }
             }
@@ -326,19 +327,19 @@ private struct LibraryChip: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(.white.opacity(0.10))
                 if let imageURL {
-                    AsyncImage(url: imageURL) { phase in
+                    BBCachedAsyncImage(url: imageURL, targetSize: CGSize(width: 260, height: 180)) { phase in
                         switch phase {
                         case .empty:
-                            ProgressView().tint(BrockbusterTheme.brockGold)
+                            AnyView(ProgressView().tint(BrockbusterTheme.brockGold))
                         case .success(let image):
-                            image
+                            AnyView(image
                                 .resizable()
-                                .scaledToFill()
+                                .scaledToFill())
                         case .failure:
-                            Image(systemName: "film")
-                                .foregroundColor(.white.opacity(0.65))
+                            AnyView(Image(systemName: "film")
+                                .foregroundColor(.white.opacity(0.65)))
                         @unknown default:
-                            EmptyView()
+                            AnyView(EmptyView())
                         }
                     }
                 } else {
@@ -429,16 +430,16 @@ private struct SectionSurface: ViewModifier {
     }
 }
 
-private struct HomeRail: View {
+private struct HomeRail<Destination: View>: View {
     @EnvironmentObject private var session: SessionStore
     let items: [JellyfinClient.LibraryItem]
-    let destination: (JellyfinClient.LibraryItem) -> AnyView
+    @ViewBuilder let destination: (JellyfinClient.LibraryItem) -> Destination
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
                 ForEach(items) { item in
-                    NavigationLink(destination: destination(item).environmentObject(session)) {
+                    NavigationLink(destination: destination(item)) {
                         HomePosterCard(item: item)
                     }
                     .buttonStyle(.plain)
@@ -495,18 +496,18 @@ private struct HomePosterCard: View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .bottomLeading) {
                 if let url = session.itemImageURL(for: item, maxWidth: 420) {
-                    AsyncImage(url: url) { phase in
+                    BBCachedAsyncImage(url: url, targetSize: CGSize(width: cardSize.w * 2.0, height: cardSize.h * 2.0)) { phase in
                         switch phase {
                         case .empty:
-                            Rectangle().fill(.white.opacity(0.08))
+                            AnyView(Rectangle().fill(.white.opacity(0.08)))
                         case .success(let image):
-                            image.resizable().scaledToFill()
+                            AnyView(image.resizable().scaledToFill())
                         case .failure:
-                            Rectangle()
+                            AnyView(Rectangle()
                                 .fill(.white.opacity(0.08))
-                                .overlay(Image(systemName: "film").foregroundColor(.white.opacity(0.55)))
+                                .overlay(Image(systemName: "film").foregroundColor(.white.opacity(0.55))))
                         @unknown default:
-                            Rectangle().fill(.white.opacity(0.08))
+                            AnyView(Rectangle().fill(.white.opacity(0.08)))
                         }
                     }
                 } else {
@@ -576,28 +577,28 @@ private struct WelcomePreloadOverlay: View {
 
             VStack(spacing: 14) {
                 if let url = profileURL {
-                    AsyncImage(url: url) { phase in
+                    BBCachedAsyncImage(url: url, targetSize: CGSize(width: 172, height: 172)) { phase in
                         switch phase {
                         case .empty:
-                            Circle()
+                            AnyView(Circle()
                                 .fill(.white.opacity(0.12))
                                 .frame(width: 86, height: 86)
-                                .overlay(ProgressView().tint(BrockbusterTheme.brockGold))
+                                .overlay(ProgressView().tint(BrockbusterTheme.brockGold)))
                         case .success(let image):
-                            image
+                            AnyView(image
                                 .resizable()
                                 .scaledToFill()
                                 .frame(width: 86, height: 86)
                                 .clipShape(Circle())
-                                .overlay(Circle().stroke(BrockbusterTheme.brockGold, lineWidth: 3))
+                                .overlay(Circle().stroke(BrockbusterTheme.brockGold, lineWidth: 3)))
                         case .failure:
-                            Image(systemName: "person.crop.circle.fill")
+                            AnyView(Image(systemName: "person.crop.circle.fill")
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: 86, height: 86)
-                                .foregroundColor(BrockbusterTheme.brockGold)
+                                .foregroundColor(BrockbusterTheme.brockGold))
                         @unknown default:
-                            EmptyView()
+                            AnyView(EmptyView())
                         }
                     }
                 }

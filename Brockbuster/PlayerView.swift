@@ -36,6 +36,7 @@ struct PlayerView: View {
     let startPositionTicks: Int
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var session: SessionStore
 
     @State private var currentURL: URL
@@ -53,6 +54,11 @@ struct PlayerView: View {
     @State private var didFallbackToTranscode: Bool = false
     @State private var isSwitchingStream: Bool = false
     @State private var errorMessage: String?
+
+    /// Set to true only when the user explicitly dismisses the player.
+    /// We avoid tearing down playback when the app temporarily backgrounds
+    /// to improve resume responsiveness.
+    @State private var userInitiatedDismissal: Bool = false
 
     init(itemId: String, url: URL, title: String, subtitle: String?, posterURL: URL?, playbackContext: SessionStore.PlaybackContext? = nil, startPositionTicks: Int = 0) {
         self.itemId = itemId
@@ -120,8 +126,22 @@ struct PlayerView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
+        .onAppear {
+            AudioSessionManager.shared.configureForPlaybackIfNeeded()
+        }
         .onDisappear {
             overlayHideTask?.cancel()
+
+            // Important: When the app backgrounds (Control Center, lock screen,
+            // app switcher), SwiftUI can trigger onDisappear for some view
+            // hierarchies. Tearing down the AVPlayer in that scenario forces a
+            // full stream re-setup on return, which feels sluggish.
+            //
+            // Only teardown when the player was intentionally dismissed.
+            guard userInitiatedDismissal, scenePhase == .active else {
+                return
+            }
+
             // Send a final progress update before stopping so Jellyfin reliably
             // persists resume state even for short play sessions.
             Task {
@@ -148,7 +168,10 @@ struct PlayerView: View {
             detachPlayer()
         }
         .alert("Playback Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("Close") { dismiss() }
+            Button("Close") {
+                userInitiatedDismissal = true
+                dismiss()
+            }
         } message: {
             Text(errorMessage ?? "")
         }
@@ -244,7 +267,7 @@ struct PlayerView: View {
     private var overlay: some View {
         HStack(spacing: 12) {
             if let posterURL {
-                AsyncImage(url: posterURL) { phase in
+                BBCachedAsyncImage(url: posterURL, targetSize: CGSize(width: 80, height: 80)) { phase in
                     switch phase {
                     case .empty:
                         RoundedRectangle(cornerRadius: 8)
@@ -280,7 +303,10 @@ struct PlayerView: View {
 
             Spacer()
 
-            Button { dismiss() } label: {
+            Button {
+                userInitiatedDismissal = true
+                dismiss()
+            } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.white)
@@ -377,7 +403,17 @@ struct PlayerViewControllerRepresentable: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
-        let player = AVPlayer(url: url)
+        // Configure audio session early so playback and resume behavior are consistent.
+        AudioSessionManager.shared.configureForPlaybackIfNeeded()
+
+        let item = AVPlayerItem(url: url)
+        // Favor fast start over aggressive buffering. This reduces the "delay
+        // before first frame" effect on good connections.
+        item.preferredForwardBufferDuration = 1
+
+        let player = AVPlayer(playerItem: item)
+        // Start promptly rather than waiting to buffer a large safety window.
+        player.automaticallyWaitsToMinimizeStalling = false
         controller.player = player
         controller.showsPlaybackControls = true
         controller.allowsPictureInPicturePlayback = true
@@ -400,7 +436,11 @@ struct PlayerViewControllerRepresentable: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
         if let current = (uiViewController.player?.currentItem?.asset as? AVURLAsset)?.url,
            current != url {
-            let player = AVPlayer(url: url)
+            AudioSessionManager.shared.configureForPlaybackIfNeeded()
+            let item = AVPlayerItem(url: url)
+            item.preferredForwardBufferDuration = 1
+            let player = AVPlayer(playerItem: item)
+            player.automaticallyWaitsToMinimizeStalling = false
             uiViewController.player = player
             context.coordinator.attach(to: player)
 
@@ -413,7 +453,9 @@ struct PlayerViewControllerRepresentable: UIViewControllerRepresentable {
         if startPositionTicks > 0 {
             let seconds = Double(startPositionTicks) / 10_000_000.0
             let time = CMTime(seconds: seconds, preferredTimescale: 600)
-            player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+            // Using zero tolerance can delay startup, especially for network streams.
+            // Default tolerances are faster and still accurate for resume.
+            player.seek(to: time) { _ in
                 player.play()
                 onPlaybackStarted(startPositionTicks)
             }

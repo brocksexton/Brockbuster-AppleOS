@@ -16,7 +16,7 @@ struct AvatarView: View {
             Circle().fill(BrockbusterTheme.brockLight.opacity(0.12))
 
             if let s = urlString, let url = URL(string: s) {
-                AsyncImage(url: url) { phase in
+                BBCachedAsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
                         image.resizable().scaledToFill()

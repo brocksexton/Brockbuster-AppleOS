@@ -7,6 +7,17 @@ struct BrockbusterApp: App {
     @StateObject private var nowPlaying = NowPlayingManager()
     @AppStorage("settings.showAccountChooserOnLaunch") private var showAccountChooserOnLaunch: Bool = true
 
+    init() {
+        // Provide a reasonably sized shared URL cache so that artwork (posters, backdrops,
+        // avatars) doesn't get re-downloaded every time a view reappears.
+        //
+        // These values are intentionally conservative for mobile devices while still
+        // meaningfully improving scroll performance and reducing network churn.
+        let memoryCapacity = 60 * 1024 * 1024   // 60 MB
+        let diskCapacity = 250 * 1024 * 1024    // 250 MB
+        URLCache.shared = URLCache(memoryCapacity: memoryCapacity, diskCapacity: diskCapacity)
+    }
+
     var body: some Scene {
         WindowGroup {
             // Top-level navigation is controlled by the session's login state

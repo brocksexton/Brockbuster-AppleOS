@@ -66,7 +66,7 @@ struct SeasonDetailView: View {
                                 NavigationLink(destination: ItemDetailView(item: episode).environmentObject(session)) {
                                     HStack(spacing: 16) {
                                         if let url = session.itemImageURL(for: episode, maxWidth: 300) {
-                                            AsyncImage(url: url) { phase in
+                                            BBCachedAsyncImage(url: url) { phase in
                                                 switch phase {
                                                 case .empty:
                                                     Rectangle().fill(BrockbusterTheme.brockDark.opacity(0.3))

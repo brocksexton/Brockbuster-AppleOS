@@ -30,7 +30,7 @@ struct MembershipCardView: View {
                         HStack {
                             if let user = session.currentUser, let profileURL = session.userProfileImageURL(maxWidth: 200) {
                                 // User profile picture
-                                AsyncImage(url: profileURL) { phase in
+                                BBCachedAsyncImage(url: profileURL) { phase in
                                     switch phase {
                                     case .empty:
                                         Circle().fill(BrockbusterTheme.brockDark.opacity(0.3))

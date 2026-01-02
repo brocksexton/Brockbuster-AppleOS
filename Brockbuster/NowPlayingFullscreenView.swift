@@ -174,7 +174,7 @@ struct NowPlayingFullscreenView: View {
 
             HStack(spacing: 12) {
                 // Thumbnail
-                AsyncImage(url: state.posterURL) { phase in
+                BBCachedAsyncImage(url: state.posterURL) { phase in
                     switch phase {
                     case .success(let image):
                         image

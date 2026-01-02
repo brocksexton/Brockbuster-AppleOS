@@ -88,7 +88,7 @@ struct ItemDetailView: View {
     private var heroBackdrop: some View {
         Group {
             if let url = heroImageURL {
-                AsyncImage(url: url) { phase in
+                BBCachedAsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
                         Rectangle().fill(.black.opacity(0.18))
@@ -525,6 +525,10 @@ private var actionRow: some View {
             startPositionTicks: resolvedUserData?.playbackPositionTicks ?? 0,
             mediaKind: isEpisode ? .episode : .movie,
             seriesIdForEpisode: item.seriesId,
+            seriesTitle: item.seriesName,
+            seasonNumber: item.parentIndexNumber,
+            episodeNumber: item.indexNumber,
+            episodeTitle: (isEpisode ? (detail?.name ?? item.name) : nil),
             session: session
         )
 
@@ -961,7 +965,7 @@ private struct PosterImageURLView: View {
     var body: some View {
         Group {
             if let url {
-                AsyncImage(url: url) { phase in
+                BBCachedAsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
                         RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.white.opacity(0.08))
@@ -992,7 +996,7 @@ private struct PosterImageFallbackView: View {
     var body: some View {
         Group {
             if let url = urls[safe: index] {
-                AsyncImage(url: url) { phase in
+                BBCachedAsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
                         placeholder
@@ -1036,7 +1040,7 @@ private struct PersonAvatar: View {
     var body: some View {
         ZStack {
             if let url {
-                AsyncImage(url: url) { phase in
+                BBCachedAsyncImage(url: url) { phase in
                     switch phase {
                     case .empty:
                         Circle().fill(.white.opacity(0.10))

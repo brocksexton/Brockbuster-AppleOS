@@ -53,6 +53,12 @@ final class NowPlayingManager: ObservableObject {
         let playbackContext: SessionStore.PlaybackContext
         let startPositionTicks: Int
 
+        // Optional structured episode context (improves Now Playing + Dynamic Island display)
+        let seriesTitle: String?
+        let seasonNumber: Int?
+        let episodeNumber: Int?
+        let episodeTitle: String?
+
         // Episode-specific context (used for autoplay next episode).
         let mediaKind: MediaKind
         let episodeContext: EpisodeContext?
@@ -180,6 +186,10 @@ final class NowPlayingManager: ObservableObject {
         startPositionTicks: Int,
         mediaKind: MediaKind = .other,
         seriesIdForEpisode: String? = nil,
+        seriesTitle: String? = nil,
+        seasonNumber: Int? = nil,
+        episodeNumber: Int? = nil,
+        episodeTitle: String? = nil,
         session: SessionStore
     ) {
         Task {
@@ -200,6 +210,10 @@ final class NowPlayingManager: ObservableObject {
                     posterURL: posterURL,
                     playbackContext: context,
                     startPositionTicks: startPositionTicks,
+                    seriesTitle: seriesTitle,
+                    seasonNumber: seasonNumber,
+                    episodeNumber: episodeNumber,
+                    episodeTitle: episodeTitle,
                     mediaKind: mediaKind,
                     episodeContext: episodeContext
                 )
@@ -239,7 +253,11 @@ final class NowPlayingManager: ObservableObject {
                     subtitle: subtitle,
                     isPlaying: true,
                     positionSeconds: startSeconds,
-                    durationSeconds: 0
+                    durationSeconds: 0,
+                    seriesTitle: seriesTitle,
+                    seasonNumber: seasonNumber,
+                    episodeNumber: episodeNumber,
+                    episodeTitle: episodeTitle
                 )
                 #endif
 
@@ -307,7 +325,12 @@ final class NowPlayingManager: ObservableObject {
     // MARK: - Player setup
 
     private func setupPlayer(url: URL, startPositionTicks: Int) {
-        let player = AVPlayer(url: url)
+        AudioSessionManager.shared.configureForPlaybackIfNeeded()
+
+        let item = AVPlayerItem(url: url)
+        item.preferredForwardBufferDuration = 1
+        let player = AVPlayer(playerItem: item)
+        player.automaticallyWaitsToMinimizeStalling = false
         self._player = player
 
         attachObservers(to: player)
@@ -350,11 +373,15 @@ final class NowPlayingManager: ObservableObject {
             #if canImport(ActivityKit)
             if let current = self.item {
                 LiveActivityManager.shared.update(
-                    title: current.title,
+                    title: current.seriesTitle ?? current.title,
                     subtitle: current.subtitle,
                     isPlaying: self.isPlaying,
                     positionSeconds: seconds,
-                    durationSeconds: (player.currentItem?.duration.seconds.isFinite == true ? player.currentItem?.duration.seconds ?? 0 : 0)
+                    durationSeconds: (player.currentItem?.duration.seconds.isFinite == true ? player.currentItem?.duration.seconds ?? 0 : 0),
+                    seriesTitle: current.seriesTitle,
+                    seasonNumber: current.seasonNumber,
+                    episodeNumber: current.episodeNumber,
+                    episodeTitle: current.episodeTitle
                 )
             }
             #endif
@@ -596,11 +623,9 @@ final class NowPlayingManager: ObservableObject {
     }
 
     private func updateSystemNowPlayingInfo() {
-        guard let item else {
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-            systemNowPlayingInfo = [:]
-            return
-        }
+        // Do not clear system Now Playing due to transient state changes (e.g. stream switching).
+        // We only clear explicitly on stop.
+        guard let item else { return }
 
         let elapsedSeconds = SessionStore.ticksToSeconds(currentPositionTicks)
         let durationSeconds: Double = {
@@ -611,8 +636,24 @@ final class NowPlayingManager: ObservableObject {
             return d
         }()
 
-        systemNowPlayingInfo[MPMediaItemPropertyTitle] = item.title
-        systemNowPlayingInfo[MPMediaItemPropertyArtist] = item.subtitle ?? ""
+        let displayTitle = item.seriesTitle ?? item.title
+
+        var displaySubtitle: String = item.subtitle ?? ""
+        if item.mediaKind == .episode {
+            var seParts: [String] = []
+            if let s = item.seasonNumber, s > 0 { seParts.append("S\(s)") }
+            if let e = item.episodeNumber, e > 0 { seParts.append("E\(e)") }
+            let se = seParts.joined(separator: " • ")
+
+            if let epTitle = item.episodeTitle, !epTitle.isEmpty {
+                displaySubtitle = se.isEmpty ? epTitle : "\(se) — \(epTitle)"
+            } else if !se.isEmpty {
+                displaySubtitle = se
+            }
+        }
+
+        systemNowPlayingInfo[MPMediaItemPropertyTitle] = displayTitle
+        systemNowPlayingInfo[MPMediaItemPropertyArtist] = displaySubtitle
         systemNowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = durationSeconds
         systemNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedSeconds
         systemNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
@@ -652,4 +693,40 @@ final class NowPlayingManager: ObservableObject {
     }
 
     #endif
+}
+
+// MARK: - Audio session
+
+/// Centralizes audio-session configuration for playback.
+///
+/// This improves startup/resume behavior by ensuring iOS knows this is a
+/// playback session, and it avoids repeated category churn across different
+/// player surfaces.
+final class AudioSessionManager {
+    static let shared = AudioSessionManager()
+    private init() {}
+
+    #if os(iOS) || os(visionOS)
+    private var didConfigure = false
+    #endif
+
+    /// Configure the audio session for video playback. Safe to call repeatedly.
+    func configureForPlaybackIfNeeded() {
+        #if os(iOS) || os(visionOS)
+        guard didConfigure == false else { return }
+        didConfigure = true
+
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(
+                .playback,
+                mode: .moviePlayback,
+                options: [.allowAirPlay, .allowBluetooth]
+            )
+            try session.setActive(true)
+        } catch {
+            // Do not fail playback if the audio session cannot be configured.
+        }
+        #endif
+    }
 }

@@ -97,7 +97,7 @@ struct NowPlayingBar: View {
     @ViewBuilder
     private func poster(_ item: NowPlayingManager.NowPlayingItem) -> some View {
         if let url = item.posterURL {
-            AsyncImage(url: url) { phase in
+            BBCachedAsyncImage(url: url, targetSize: CGSize(width: 88, height: 88)) { phase in
                 switch phase {
                 case .empty:
                     placeholder

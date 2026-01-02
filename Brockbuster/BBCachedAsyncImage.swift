@@ -3,10 +3,10 @@ import ImageIO
 
 #if canImport(UIKit)
 import UIKit
-private typealias PlatformImage = UIImage
+typealias PlatformImage = UIImage
 #elseif canImport(AppKit)
 import AppKit
-private typealias PlatformImage = NSImage
+typealias PlatformImage = NSImage
 #endif
 
 /// A lightweight, aggressively cached replacement for `AsyncImage`.
@@ -179,7 +179,7 @@ enum BBCachedImageDecoder {
 
 // MARK: - Platform Image -> SwiftUI Image bridge
 
-private extension Image {
+fileprivate extension Image {
     init(platformImage: PlatformImage) {
         #if canImport(UIKit)
         self = Image(uiImage: platformImage)

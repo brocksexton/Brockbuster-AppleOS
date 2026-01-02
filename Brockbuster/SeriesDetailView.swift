@@ -64,6 +64,9 @@ struct SeriesDetailView: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
+            #if os(tvOS)
+            .focusSection()
+            #endif
         }
         .background(BrockbusterTheme.Background)
         .navigationTitle(series.name ?? "Show")
@@ -96,11 +99,18 @@ private var primaryPlayRow: some View {
             .foregroundStyle(.black)
             .padding(.vertical, 10)
             .padding(.horizontal, 14)
+            #if os(tvOS)
+            .frame(width: 640, alignment: .leading)
+            #else
             .frame(maxWidth: .infinity, alignment: .leading)
+            #endif
             .background(BrockbusterTheme.ticketYellow)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
+        #if os(tvOS)
+        .bbTVFocusCard(cornerRadius: 18)
+        #endif
         .disabled(primaryEpisode == nil && isLoading)
 
         Button {
@@ -121,6 +131,9 @@ private var primaryPlayRow: some View {
                 )
         }
         .buttonStyle(.plain)
+        #if os(tvOS)
+        .bbTVFocusCard(cornerRadius: 18)
+        #endif
         .accessibilityLabel("Browse episodes")
     }
 }
@@ -247,6 +260,7 @@ private var primaryPlayRow: some View {
                 #if os(tvOS)
                 TextField("Search episodes", text: $episodeQuery)
                     .autocorrectionDisabled(true)
+                    .bbTextFieldStyle()
                 #else
                 TextField("Search episodes", text: $episodeQuery)
                     .textFieldStyle(.roundedBorder)
@@ -272,6 +286,9 @@ private var primaryPlayRow: some View {
                                 .environmentObject(session)
                         } label: {
                             EpisodeRow(episode: ep, seriesFallback: series) { await play(episode: ep) }
+                            #if os(tvOS)
+                            .bbTVFocusCard(cornerRadius: 22)
+                            #endif
                         }
                         .buttonStyle(.plain)
                     }

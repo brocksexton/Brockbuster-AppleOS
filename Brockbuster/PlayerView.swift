@@ -327,13 +327,9 @@ struct PlayerView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .background(
-                        Group {
-                            if subtitlesEnabled {
-                                Color.white
-                            } else {
-                                AnyShapeStyle(.ultraThinMaterial)
-                            }
-                        },
+                        subtitlesEnabled
+                        ? AnyShapeStyle(Color.white)
+                        : AnyShapeStyle(.ultraThinMaterial),
                         in: Capsule()
                     )
                     .opacity(subtitlesAvailable ? 1.0 : 0.35)
@@ -509,11 +505,11 @@ struct PlayerViewControllerRepresentable: UIViewControllerRepresentable {
         let item = AVPlayerItem(url: url)
         // Favor fast start over aggressive buffering. This reduces the "delay
         // before first frame" effect on good connections.
-        item.preferredForwardBufferDuration = 1
+        item.preferredForwardBufferDuration = 3
 
         let player = AVPlayer(playerItem: item)
         // Start promptly rather than waiting to buffer a large safety window.
-        player.automaticallyWaitsToMinimizeStalling = false
+        player.automaticallyWaitsToMinimizeStalling = true
         controller.player = player
         controller.showsPlaybackControls = true
         controller.allowsPictureInPicturePlayback = true
@@ -538,9 +534,9 @@ struct PlayerViewControllerRepresentable: UIViewControllerRepresentable {
            current != url {
             AudioSessionManager.shared.configureForPlaybackIfNeeded()
             let item = AVPlayerItem(url: url)
-            item.preferredForwardBufferDuration = 1
+            item.preferredForwardBufferDuration = 3
             let player = AVPlayer(playerItem: item)
-            player.automaticallyWaitsToMinimizeStalling = false
+            player.automaticallyWaitsToMinimizeStalling = true
             uiViewController.player = player
             context.coordinator.attach(to: player)
 

@@ -293,13 +293,20 @@ private struct QuickActionCard: View {
             Spacer(minLength: 0)
         }
         .padding(14)
+        #if os(tvOS)
+        // Avoid “full-width” cards on tvOS. Full-width + focus halos create
+        // giant highlights that feel disconnected from the control.
+        .frame(width: 620, height: 92)
+        #else
         .frame(maxWidth: .infinity)
+        #endif
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(colorScheme == .dark ? .white.opacity(0.10) : BrockbusterTheme.brockBlue.opacity(0.18), lineWidth: 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .bbTVFocusCard(cornerRadius: 22)
     }
 }
 
@@ -381,6 +388,7 @@ private struct PosterCard: View {
                 .stroke(.white.opacity(0.12), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 8)
+        .bbTVFocusCard(cornerRadius: 18)
     }
 }
 
@@ -448,11 +456,15 @@ private struct HistoryRow: View {
                 .foregroundColor((colorScheme == .dark ? BrockbusterTheme.brockLight : BrockbusterTheme.brockDark).opacity(0.35))
         }
         .padding(12)
+        #if os(tvOS)
+        .frame(maxWidth: 1320)
+        #endif
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(colorScheme == .dark ? .white.opacity(0.10) : BrockbusterTheme.brockBlue.opacity(0.18), lineWidth: 1)
         )
+        .bbTVFocusCard(cornerRadius: 20)
     }
 }
 

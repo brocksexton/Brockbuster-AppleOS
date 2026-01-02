@@ -165,9 +165,9 @@ struct NowPlayingFullscreenView: View {
                 Spacer()
                 Button {
                     guard let window = nowPlaying.introWindow,
-                          let player = nowPlaying.currentPlayer() else { return }
+                          nowPlaying.currentPlayer() != nil else { return }
                     let seconds = SessionStore.ticksToSeconds(window.endTicks)
-                    player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
+                    nowPlaying.seek(to: seconds)
                 } label: {
                     Text("Skip Intro")
                         .font(.system(size: 14, weight: .semibold))

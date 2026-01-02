@@ -355,10 +355,16 @@ private var actionRow: some View {
                 .foregroundStyle(.black)
                 .padding(.vertical, 12)
                 .padding(.horizontal, 14)
+                #if os(tvOS)
+                .frame(maxWidth: 720, alignment: .leading)
+                #endif
                 .background(BrockbusterTheme.ticketYellow)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
+            #if os(tvOS)
+            .bbTVFocusCard(cornerRadius: 20)
+            #endif
 
             Button {
                 Task { await toggleFavorite() }
@@ -375,6 +381,9 @@ private var actionRow: some View {
                 .frame(width: 52, height: 52)
             }
             .buttonStyle(.plain)
+            #if os(tvOS)
+            .bbTVFocusCard(cornerRadius: 18)
+            #endif
             .disabled(isTogglingFavorite || detail == nil || session.currentUser == nil)
         }
     }
@@ -570,7 +579,7 @@ private var actionRow: some View {
             } else {
                 LinearGradient(
                     gradient: Gradient(colors: [
-                        Color(.systemBackground),
+                        Color.white,
                         BrockbusterTheme.brockBlue.opacity(0.10),
                         BrockbusterTheme.brockGold.opacity(0.08)
                     ]),
@@ -1176,3 +1185,4 @@ private struct EpisodeProgressBar: View {
         .accessibilityHidden(true)
     }
 }
+

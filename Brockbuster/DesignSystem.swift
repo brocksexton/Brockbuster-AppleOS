@@ -64,6 +64,19 @@ struct BrockbusterTheme {
     /// slightly and scales down to give tactile feedback.
     struct TicketButtonStyle: ButtonStyle {
         func makeBody(configuration: Configuration) -> some View {
+            #if os(tvOS)
+            configuration.label
+                .padding(.vertical, 10)
+                .padding(.horizontal, 18)
+                .background(BrockbusterTheme.brockGold)
+                .foregroundColor(BrockbusterTheme.brockDark)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 4)
+                // tvOS already provides a focus scale; keep the pressed state subtle.
+                .scaleEffect(configuration.isPressed ? 0.99 : 1.0)
+                .opacity(configuration.isPressed ? 0.88 : 1.0)
+                .animation(.easeInOut(duration: 0.10), value: configuration.isPressed)
+            #else
             configuration.label
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity)
@@ -74,6 +87,7 @@ struct BrockbusterTheme {
                 .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
                 .opacity(configuration.isPressed ? 0.8 : 1.0)
                 .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
+            #endif
         }
     }
 

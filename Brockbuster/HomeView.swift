@@ -441,6 +441,9 @@ private struct HomeRail<Destination: View>: View {
                 ForEach(items) { item in
                     NavigationLink(destination: destination(item)) {
                         HomePosterCard(item: item)
+                        #if os(tvOS)
+                        .bbTVFocusCard(cornerRadius: 22)
+                        #endif
                     }
                     .buttonStyle(.plain)
                 }
@@ -462,7 +465,7 @@ private struct HomePosterCard: View {
     private var cardSize: (w: CGFloat, h: CGFloat) {
         #if os(tvOS)
         // tvOS needs larger targets for comfortable focus navigation.
-        return (w: 260, h: 390)
+        return (w: 220, h: 330)
         #else
         if hSize == .regular {
             return (w: 180, h: 260)

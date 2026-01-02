@@ -71,3 +71,44 @@ extension View {
     }
 }
 
+// MARK: - tvOS focus styling
+
+#if os(tvOS)
+private struct BrockbusterTVFocusCardModifier: ViewModifier {
+    @FocusState private var isFocused: Bool
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            // Disable the default oversized tvOS focus halo and draw a focused
+            // state that matches Brockbuster's “glass + gold” language.
+            .focused($isFocused)
+            // `focusEffect(_:)` is not consistently available across SDKs.
+            // Using the dedicated modifier avoids build breaks.
+            .focusEffectDisabled()
+            .scaleEffect(isFocused ? 1.03 : 1.0)
+            .shadow(color: .black.opacity(isFocused ? 0.30 : 0.18), radius: isFocused ? 16 : 10, x: 0, y: isFocused ? 10 : 6)
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(isFocused ? BrockbusterTheme.brockGold.opacity(0.95) : .white.opacity(0.08), lineWidth: isFocused ? 3 : 1)
+            )
+            .zIndex(isFocused ? 1 : 0)
+            .animation(.easeInOut(duration: 0.16), value: isFocused)
+    }
+}
+
+extension View {
+    /// Applies a tvOS focus treatment with a modest scale and a gold stroke.
+    /// On non-tvOS platforms this is a no-op.
+    func bbTVFocusCard(cornerRadius: CGFloat = 22) -> some View {
+        self.modifier(BrockbusterTVFocusCardModifier(cornerRadius: cornerRadius))
+    }
+}
+#else
+extension View {
+    /// Non-tvOS no-op.
+    func bbTVFocusCard(cornerRadius: CGFloat = 22) -> some View { self }
+}
+#endif
+
+

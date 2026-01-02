@@ -76,12 +76,6 @@ final class NowPlayingManager: ObservableObject {
     /// so audio does not begin "behind" the transition.
     @Published private(set) var isPreparingPlayback: Bool = false
 
-    /// True while we are fetching a playback context and preparing the player.
-    /// Used to present the fullscreen player immediately with a lightweight
-    /// loading overlay so audio does not "start in the background" before the
-    /// UI appears.
-    @Published private(set) var isPreparingPlayback: Bool = false
-
     /// If present, the user is near the end of an episode and we are offering an
     /// autoplay transition to the next episode.
     @Published private(set) var upNext: UpNextState?
@@ -374,9 +368,13 @@ final class NowPlayingManager: ObservableObject {
         AudioSessionManager.shared.configureForPlaybackIfNeeded()
 
         let item = AVPlayerItem(url: url)
-        item.preferredForwardBufferDuration = 1
+        // A slightly larger forward buffer improves resiliency after seeks and
+        // when chaining into the next episode.
+        item.preferredForwardBufferDuration = 3
         let player = AVPlayer(playerItem: item)
-        player.automaticallyWaitsToMinimizeStalling = false
+        // Allow AVPlayer to manage buffering so playback resumes automatically
+        // after seeks and network stalls.
+        player.automaticallyWaitsToMinimizeStalling = true
         self._player = player
 
         attachObservers(to: player)
@@ -384,15 +382,37 @@ final class NowPlayingManager: ObservableObject {
         // Seek before playing if needed.
         if startPositionTicks > 0 {
             let seconds = SessionStore.ticksToSeconds(startPositionTicks)
-            player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
+            let time = CMTime(seconds: seconds, preferredTimescale: 600)
             currentPositionTicks = startPositionTicks
+            player.seek(to: time) { [weak self] _ in
+                guard let self else { return }
+                player.play()
+                self.isPlaying = true
+                // Report start once playback has actually been kicked off.
+                Task { await self.reportStartedIfNeeded() }
+            }
+        } else {
+            player.play()
+            isPlaying = true
+            // Report start immediately once we have a player.
+            Task { await reportStartedIfNeeded() }
         }
+    }
 
-        player.play()
-        isPlaying = true
-
-        // Report start immediately once we have a player.
-        Task { await reportStartedIfNeeded() }
+    /// Seek to a specific position and, if the user was previously playing,
+    /// resume playback once buffering is sufficient.
+    func seek(to seconds: Double) {
+        guard let player = _player else { return }
+        let wasPlaying = (player.timeControlStatus == .playing) || isPlaying
+        let time = CMTime(seconds: seconds, preferredTimescale: 600)
+        player.seek(to: time) { [weak self] _ in
+            guard let self else { return }
+            self.currentPositionTicks = SessionStore.secondsToTicks(seconds)
+            if wasPlaying {
+                player.play()
+                self.isPlaying = true
+            }
+        }
     }
 
     private func attachObservers(to player: AVPlayer) {
@@ -661,11 +681,10 @@ final class NowPlayingManager: ObservableObject {
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let self,
                   let e = event as? MPChangePlaybackPositionCommandEvent,
-                  let p = self._player
+                  self._player != nil
             else { return .commandFailed }
 
-            p.seek(to: CMTime(seconds: e.positionTime, preferredTimescale: 600))
-            self.currentPositionTicks = SessionStore.secondsToTicks(e.positionTime)
+            self.seek(to: e.positionTime)
             self.updateSystemNowPlayingInfo()
             return .success
         }

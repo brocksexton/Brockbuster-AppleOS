@@ -77,6 +77,8 @@ struct SettingsTab: View {
     @AppStorage("settings.showAccountChooserOnLaunch") private var showAccountChooserOnLaunch: Bool = true
     @AppStorage("onboarding.didComplete") private var didCompleteOnboarding: Bool = false
     @AppStorage("onboarding.preferSkip") private var preferSkipOnboarding: Bool = false
+    @AppStorage("onboarding.forceShowNextLaunch") private var forceShowOnboardingNextLaunch: Bool = false
+    @AppStorage("onboarding.presentNow") private var presentOnboardingNow: Bool = false
 
     @State private var clearCacheOnLogout: Bool = false
     @State private var preferDarkMode: Bool = true
@@ -118,12 +120,30 @@ struct SettingsTab: View {
                 Toggle("Default to remembering accounts", isOn: $defaultRememberAccount)
                 Toggle("Show account chooser on launch", isOn: $showAccountChooserOnLaunch)
 
+            }
+
+            Section(header: Text("Welcome Tour")) {
                 Button {
-                    // Reset the tour flags so it will appear on next launch.
-                    didCompleteOnboarding = false
+                    // Present immediately (works even before login).
                     preferSkipOnboarding = false
+                    didCompleteOnboarding = false
+                    presentOnboardingNow = true
                 } label: {
-                    Label("Show welcome tour on next launch", systemImage: "sparkles")
+                    Label("Show welcome tour now", systemImage: "sparkles")
+                }
+
+                Toggle(isOn: Binding(
+                    get: { forceShowOnboardingNextLaunch },
+                    set: { newValue in
+                        // If enabling, ensure it isn't considered skipped.
+                        if newValue {
+                            preferSkipOnboarding = false
+                            didCompleteOnboarding = false
+                        }
+                        forceShowOnboardingNextLaunch = newValue
+                    }
+                )) {
+                    Text("Show tour on next launch")
                 }
             }
 

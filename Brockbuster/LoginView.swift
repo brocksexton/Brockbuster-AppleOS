@@ -14,6 +14,8 @@ struct LoginView: View {
     @AppStorage("settings.defaultRememberAccount") private var defaultRememberAccount: Bool = true
     @State private var rememberThisAccount: Bool = true
 
+    @AppStorage("onboarding.presentNow") private var presentOnboardingNow: Bool = false
+
     @State private var serverReachable: Bool? = nil
     @State private var showInfoAlert: Bool = false
 
@@ -79,31 +81,58 @@ struct LoginView: View {
     // MARK: - iPhone Layout (separate, width-safe)
 
     private func iPhoneLayout(geo: GeometryProxy, isCompactHeight: Bool) -> some View {
-        let logoSize: CGFloat = isCompactHeight ? 110 : 150
+        let logoSize: CGFloat = isCompactHeight ? 96 : 124
 
         return ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: isCompactHeight ? 18 : 28) {
-                Spacer(minLength: isCompactHeight ? 10 : 18)
+            VStack(spacing: isCompactHeight ? 14 : 20) {
+                Spacer(minLength: isCompactHeight ? 8 : 14)
 
-                header(logoSize: logoSize, animateLogo: true)
-                    .opacity(appear ? 1 : 0)
-                    .offset(y: appear ? 0 : 14)
+                // More compact, iOS-first hero.
+                VStack(spacing: 12) {
+                    Image("logo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: logoSize, height: logoSize)
+                        .shadow(color: .black.opacity(0.35), radius: 22, x: 0, y: 12)
+                        .scaleEffect(logoPulse ? 1.02 : 0.98)
 
-                connectivityRow()
-                    .opacity(appear ? 1 : 0)
-                    .offset(y: appear ? 0 : 10)
-                    .animation(.easeOut(duration: 0.45).delay(0.06), value: appear)
+                    VStack(spacing: 4) {
+                        Text("Welcome back")
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundColor(BrockbusterTheme.brockLight)
 
-                // The iPhone card is NOT GlassCard (to avoid any internal padding/offset quirks).
+                        Text("Grab your ticket. Let’s roll.")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundColor(BrockbusterTheme.brockLight.opacity(0.82))
+                    }
+                }
+                .opacity(appear ? 1 : 0)
+                .offset(y: appear ? 0 : 14)
+
+                // A single, cohesive card: status + fields + CTAs.
                 iPhoneFormCard()
                     .opacity(appear ? 1 : 0)
                     .offset(y: appear ? 0 : 18)
                     .animation(.easeOut(duration: 0.55).delay(0.10), value: appear)
 
+                tourButton()
+                    .opacity(appear ? 1 : 0)
+                    .offset(y: appear ? 0 : 12)
+                    .animation(.easeOut(duration: 0.55).delay(0.14), value: appear)
+
+                Button {
+                    presentOnboardingNow = true
+                } label: {
+                    Label("Take a quick tour", systemImage: "sparkles")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                }
+                .buttonStyle(.bordered)
+                .tint(BrockbusterTheme.brockGold)
+
                 Spacer(minLength: 18)
             }
+            .frame(maxWidth: 520, alignment: .center)
             .frame(maxWidth: .infinity, alignment: .center)
-            // Critical: apply padding to the whole stack, not individual rows
             .padding(.horizontal, 16)
             .padding(.bottom, max(24, geo.safeAreaInsets.bottom + 24))
             .padding(.top, 6)
@@ -140,6 +169,12 @@ struct LoginView: View {
                     .opacity(appear ? 1 : 0)
                     .offset(y: appear ? 0 : 18)
                     .animation(.easeOut(duration: 0.55).delay(0.10), value: appear)
+
+                tourButton()
+                    .padding(.horizontal, 28)
+                    .opacity(appear ? 1 : 0)
+                    .offset(y: appear ? 0 : 12)
+                    .animation(.easeOut(duration: 0.55).delay(0.14), value: appear)
 
                 Spacer(minLength: 18)
             }
@@ -201,6 +236,19 @@ struct LoginView: View {
 
     // MARK: - Components
 
+    private func tourButton() -> some View {
+        Button {
+            presentOnboardingNow = true
+        } label: {
+            Label("Take a quick tour", systemImage: "sparkles")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .tint(BrockbusterTheme.brockGold)
+        .foregroundColor(BrockbusterTheme.brockDark)
+    }
+
     private func header(logoSize: CGFloat, animateLogo: Bool) -> some View {
         VStack(spacing: 18) {
             Image("logo")
@@ -246,6 +294,8 @@ struct LoginView: View {
 
     private func iPhoneFormCard() -> some View {
         VStack(alignment: .leading, spacing: 16) {
+            connectivityRow()
+
             VStack(alignment: .leading, spacing: 4) {
                 Text("Username")
                     .font(BrockbusterTheme.Fonts.body.weight(.semibold))

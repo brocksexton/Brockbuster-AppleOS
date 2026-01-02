@@ -294,7 +294,7 @@ struct ItemDetailView: View {
             ?? session.itemImageURL(for: item, kind: "Primary", maxWidth: 720)
     }
 
-    
+
     /// Fallback chain for Episode "cover art" (the small poster tile).
     /// Preference:
     /// 1) Season Primary, then Season Thumb
@@ -568,6 +568,18 @@ private var actionRow: some View {
                     endPoint: .bottom
                 )
             } else {
+                #if os(tvOS)
+                // `systemBackground` is unavailable on tvOS. Use an appropriate fallback.
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color.black,
+                        BrockbusterTheme.brockBlue.opacity(0.10),
+                        BrockbusterTheme.brockGold.opacity(0.08)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                #else
                 LinearGradient(
                     gradient: Gradient(colors: [
                         Color(.systemBackground),
@@ -577,6 +589,7 @@ private var actionRow: some View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
+                #endif
             }
         }
     }
@@ -738,7 +751,7 @@ private var actionRow: some View {
         return formatISODate(iso)
     }
 
-    
+
     /// Extra bottom inset so content never sits under the custom floating tab bar on iPhone.
     /// (The system safe-area does not account for our custom overlay.)
     private var bottomContentInset: CGFloat {

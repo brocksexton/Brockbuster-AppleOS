@@ -10,6 +10,8 @@ struct ServerSetupView: View {
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
 
+    @AppStorage("onboarding.presentNow") private var presentOnboardingNow: Bool = false
+
     var body: some View {
         ZStack {
             BrockbusterTheme.brockDark
@@ -51,8 +53,21 @@ struct ServerSetupView: View {
                                 .font(BrockbusterTheme.Fonts.body.weight(.bold))
                         }
                         .buttonStyle(BrockbusterTheme.TicketButtonStyle())
+
+                        Button {
+                            presentOnboardingNow = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "sparkles")
+                                Text("Take a quick tour")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(BrockbusterTheme.brockGold)
                     }
                 }
+
                 // Optionally a reset button to revert to default server
                 if session.serverURL != SessionStore.defaultServerURL {
                     Button(action: resetToDefault) {

@@ -1,6 +1,15 @@
 import Foundation
 import SwiftUI
 import AVKit
+import AVFoundation
+
+#if canImport(MediaPlayer)
+import MediaPlayer
+#endif
+
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Centralized playback manager that keeps an AVPlayer alive even when the
 /// full-screen player UI is dismissed, enabling a "Now Playing" bar.
@@ -88,6 +97,18 @@ final class NowPlayingManager: ObservableObject {
 
     private weak var sessionRef: SessionStore?
 
+    // MARK: - System Now Playing (Lock Screen / Control Center)
+    //
+    // NOTE:
+    // - This is compiled only when MediaPlayer is available.
+    // - UIKit usage is guarded for platforms that provide it.
+
+    #if canImport(MediaPlayer)
+    private var systemNowPlayingInfo: [String: Any] = [:]
+    private var remoteCommandsConfigured: Bool = false
+    private var artworkTask: Task<Void, Never>?
+    #endif
+
     // MARK: - Public API
 
     var hasActiveItem: Bool { item != nil }
@@ -112,6 +133,10 @@ final class NowPlayingManager: ObservableObject {
             p.play()
             isPlaying = true
         }
+
+        #if canImport(MediaPlayer)
+        updateSystemNowPlayingInfo()
+        #endif
     }
 
     /// Stop playback and clear state.
@@ -119,6 +144,15 @@ final class NowPlayingManager: ObservableObject {
         Task {
             await reportStopped(playedToCompletion: playedToCompletion, failed: failed)
             teardownPlayer()
+
+            #if canImport(MediaPlayer)
+            clearSystemNowPlaying()
+            #endif
+
+            #if canImport(ActivityKit)
+            LiveActivityManager.shared.end()
+            #endif
+
             item = nil
             isPlayerPresented = false
             progress = 0
@@ -130,6 +164,10 @@ final class NowPlayingManager: ObservableObject {
             introWindow = nil
             hasPreparedUpNext = false
             autoplayCancelled = false
+
+            #if canImport(MediaPlayer)
+            clearSystemNowPlaying()
+            #endif
         }
     }
 
@@ -167,6 +205,14 @@ final class NowPlayingManager: ObservableObject {
                 )
 
                 // Replace any existing playback.
+                #if canImport(MediaPlayer)
+                clearSystemNowPlaying()
+                #endif
+
+                #if canImport(ActivityKit)
+                LiveActivityManager.shared.end()
+                #endif
+
                 teardownPlayer()
 
                 item = newItem
@@ -176,6 +222,26 @@ final class NowPlayingManager: ObservableObject {
                 autoplayCancelled = false
                 setupPlayer(url: context.url, startPositionTicks: startPositionTicks)
                 isPlayerPresented = true
+
+                #if canImport(MediaPlayer)
+                configureAudioSessionForPlaybackIfPossible()
+                configureRemoteCommandsIfNeeded()
+                updateSystemNowPlayingInfo()
+                updateSystemNowPlayingArtworkIfNeeded()
+                #endif
+
+                #if canImport(ActivityKit)
+                let startSeconds = SessionStore.ticksToSeconds(startPositionTicks)
+                LiveActivityManager.shared.startIfNeeded(
+                    itemId: itemId,
+                    posterURL: posterURL,
+                    title: title,
+                    subtitle: subtitle,
+                    isPlaying: true,
+                    positionSeconds: startSeconds,
+                    durationSeconds: 0
+                )
+                #endif
 
                 // Best-effort: fetch intro segments for episodes.
                 if mediaKind == .episode {
@@ -276,6 +342,22 @@ final class NowPlayingManager: ObservableObject {
             }
 
             self.isPlaying = player.timeControlStatus == .playing
+
+            #if canImport(MediaPlayer)
+            self.updateSystemNowPlayingInfo()
+            #endif
+
+            #if canImport(ActivityKit)
+            if let current = self.item {
+                LiveActivityManager.shared.update(
+                    title: current.title,
+                    subtitle: current.subtitle,
+                    isPlaying: self.isPlaying,
+                    positionSeconds: seconds,
+                    durationSeconds: (player.currentItem?.duration.seconds.isFinite == true ? player.currentItem?.duration.seconds ?? 0 : 0)
+                )
+            }
+            #endif
 
             // Autoplay next episode prompt (~15s remaining)
             self.maybePrepareUpNext(secondsElapsed: seconds, player: player)
@@ -449,4 +531,125 @@ final class NowPlayingManager: ObservableObject {
             failed: failed
         )
     }
+
+    // MARK: - System Now Playing helpers (iOS/iPadOS)
+
+    #if canImport(MediaPlayer)
+
+    /// Configure an AVAudioSession category suitable for media playback.
+    /// Safe to call repeatedly.
+    private func configureAudioSessionForPlaybackIfPossible() {
+        #if os(iOS) || os(visionOS)
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .moviePlayback, options: [])
+            try session.setActive(true)
+        } catch {
+            // Best-effort only.
+        }
+        #endif
+    }
+
+    private func configureRemoteCommandsIfNeeded() {
+        guard remoteCommandsConfigured == false else { return }
+        remoteCommandsConfigured = true
+
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.isEnabled = true
+        center.pauseCommand.isEnabled = true
+        center.togglePlayPauseCommand.isEnabled = true
+        center.changePlaybackPositionCommand.isEnabled = true
+
+        center.playCommand.addTarget { [weak self] _ in
+            guard let self, let p = self._player else { return .commandFailed }
+            p.play()
+            self.isPlaying = true
+            self.updateSystemNowPlayingInfo()
+            return .success
+        }
+
+        center.pauseCommand.addTarget { [weak self] _ in
+            guard let self, let p = self._player else { return .commandFailed }
+            p.pause()
+            self.isPlaying = false
+            self.updateSystemNowPlayingInfo()
+            return .success
+        }
+
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            self.togglePlayPause()
+            return .success
+        }
+
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self,
+                  let e = event as? MPChangePlaybackPositionCommandEvent,
+                  let p = self._player
+            else { return .commandFailed }
+
+            p.seek(to: CMTime(seconds: e.positionTime, preferredTimescale: 600))
+            self.currentPositionTicks = SessionStore.secondsToTicks(e.positionTime)
+            self.updateSystemNowPlayingInfo()
+            return .success
+        }
+    }
+
+    private func updateSystemNowPlayingInfo() {
+        guard let item else {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            systemNowPlayingInfo = [:]
+            return
+        }
+
+        let elapsedSeconds = SessionStore.ticksToSeconds(currentPositionTicks)
+        let durationSeconds: Double = {
+            guard let p = _player,
+                  let d = p.currentItem?.duration.seconds,
+                  d.isFinite, d > 0
+            else { return 0 }
+            return d
+        }()
+
+        systemNowPlayingInfo[MPMediaItemPropertyTitle] = item.title
+        systemNowPlayingInfo[MPMediaItemPropertyArtist] = item.subtitle ?? ""
+        systemNowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = durationSeconds
+        systemNowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedSeconds
+        systemNowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = systemNowPlayingInfo
+    }
+
+    private func updateSystemNowPlayingArtworkIfNeeded() {
+        #if canImport(UIKit)
+        guard let url = item?.posterURL else { return }
+
+        artworkTask?.cancel()
+        artworkTask = Task { [weak self] in
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard !Task.isCancelled, let image = UIImage(data: data) else { return }
+
+                let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+
+                await MainActor.run {
+                    guard let self else { return }
+                    self.systemNowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = self.systemNowPlayingInfo
+                }
+            } catch {
+                // Best-effort only.
+            }
+        }
+        #endif
+    }
+
+    private func clearSystemNowPlaying() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        systemNowPlayingInfo = [:]
+        artworkTask?.cancel()
+        artworkTask = nil
+    }
+
+    #endif
 }

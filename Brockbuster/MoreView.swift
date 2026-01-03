@@ -1,11 +1,26 @@
 import SwiftUI
+import Foundation
+
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// A consolidated list of secondary screens that don't need their own bottom-tab.
 /// This menu is intended to be extensible as Brockbuster grows (accounts, friends,
 /// stats/health, settings, etc.).
+@MainActor
 struct MoreView: View {
     @EnvironmentObject private var session: SessionStore
     @State private var showingLogoutConfirm = false
+
+    // Session-derived values used in multiple subviews.
+    private var currentUsername: String {
+        session.currentUser?.name ?? "Not signed in"
+    }
+
+    private var currentServer: String {
+        session.serverURL.host ?? session.serverURL.absoluteString
+    }
 
     var body: some View {
         #if os(tvOS)
@@ -233,12 +248,300 @@ private struct MoreRow: View {
 }
 #endif
 
+// MARK: - Bug Reporting
+
+/// Simple in-app bug reporter that posts a structured message to a Discord webhook.
+///
+/// Notes:
+/// - Intentionally avoids collecting any sensitive information.
+/// - Keeps payload small to fit Discord embed limits.
+@MainActor
+struct BugReportView: View {
+    enum EntryPoint: String {
+        case settings
+        case shake
+    }
+
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var session: SessionStore
+
+    let entryPoint: EntryPoint
+
+    @State private var subject: String = ""
+    @State private var details: String = ""
+    @State private var includeDiagnostics: Bool = true
+
+    @State private var isSending: Bool = false
+    @State private var sentSuccessfully: Bool = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Form {
+            Section {
+                Text("Send a quick report to Brock via Discord. Please avoid sharing passwords, tokens, or private information.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+
+            Section(header: Text("What happened?")) {
+                TextField("Short summary", text: $subject)
+                TextEditor(text: $details)
+                    .frame(minHeight: 140)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(.secondary.opacity(0.25), lineWidth: 1)
+                    )
+            }
+
+            Section {
+                Toggle("Include device + app info", isOn: $includeDiagnostics)
+            }
+
+            if let errorMessage {
+                Section {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                }
+            }
+        }
+        .navigationTitle("Report a Bug")
+        #if !os(macOS)
+        .bbNavigationTitleInline()
+        #endif
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close") { dismiss() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    Task { await send() }
+                } label: {
+                    if isSending {
+                        ProgressView()
+                    } else {
+                        Text("Send")
+                    }
+                }
+                .disabled(isSending || (subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+            }
+        }
+        .alert("Thanks!", isPresented: $sentSuccessfully) {
+            Button("Done") { dismiss() }
+        } message: {
+            Text("Your report was sent.")
+        }
+        .onAppear {
+            if subject.isEmpty && entryPoint == .shake {
+                subject = "Quick bug report"
+            }
+        }
+    }
+
+    private func send() async {
+        isSending = true
+        errorMessage = nil
+        defer { isSending = false }
+
+        let diagnostics = includeDiagnostics
+            ? await BugReportDiagnostics.build(session: session, entryPoint: entryPoint)
+            : nil
+
+        do {
+            try await BugReportService.shared.send(
+                subject: subject,
+                details: details,
+                diagnostics: diagnostics
+            )
+            sentSuccessfully = true
+        } catch {
+            errorMessage = "Failed to send report: \(error.localizedDescription)"
+        }
+    }
+}
+
+private struct BugReportDiagnostics {
+    let appName: String
+    let appVersion: String
+    let buildNumber: String
+    let osVersion: String
+    let device: String
+    let locale: String
+    let timeZone: String
+    let server: String
+    let user: String
+    let entryPoint: String
+    let timestampISO8601: String
+
+	static func build(session: SessionStore, entryPoint: BugReportView.EntryPoint) async -> BugReportDiagnostics {
+		return await MainActor.run {
+        let bundle = Bundle.main
+        let appName = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? "Brockbuster"
+        let appVersion = (bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "?"
+        let buildNumber = (bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String) ?? "?"
+
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+        let device = BugReportPlatform.deviceDescription
+
+        let locale = Locale.current.identifier
+        let timeZone = TimeZone.current.identifier
+
+        let server = session.serverURL.host ?? session.serverURL.absoluteString
+        let user = session.currentUser?.name ?? "Not signed in"
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let timestamp = formatter.string(from: Date())
+
+		return .init(
+            appName: appName,
+            appVersion: appVersion,
+            buildNumber: buildNumber,
+            osVersion: osVersion,
+            device: device,
+            locale: locale,
+            timeZone: timeZone,
+            server: server,
+            user: user,
+            entryPoint: entryPoint.rawValue,
+            timestampISO8601: timestamp
+		)
+		}
+    }
+
+    var asMarkdown: String {
+        var lines: [String] = []
+        lines.append("App: \(appName) \(appVersion) (\(buildNumber))")
+        lines.append("OS: \(osVersion)")
+        lines.append("Device: \(device)")
+        lines.append("Locale: \(locale)")
+        lines.append("Time Zone: \(timeZone)")
+        lines.append("Server: \(server)")
+        lines.append("User: \(user)")
+        lines.append("Entry: \(entryPoint)")
+        lines.append("Time: \(timestampISO8601)")
+        return lines.joined(separator: "\n")
+    }
+}
+
+private enum BugReportPlatform {
+    static var deviceDescription: String {
+        #if canImport(UIKit)
+        #if os(tvOS)
+        return "Apple TV"
+        #else
+        let name = UIDevice.current.name
+        let model = UIDevice.current.model
+        let system = "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
+        return "\(model) — \(name) — \(system)"
+        #endif
+        #elseif canImport(AppKit)
+        return "Mac"
+        #else
+        return "Unknown"
+        #endif
+    }
+}
+
+private final class BugReportService {
+    static let shared = BugReportService()
+    private init() {}
+
+    /// Discord webhook for bug reports.
+    ///
+    /// If you ever need to rotate this, change the URL string and ship an update.
+    private let webhookURLString = "https://discord.com/api/webhooks/1456861309084893408/akz7vo4PN-LDW3CLDwYXwcNsN87Iunx12XtVe3IgOcktgns-PjPlIqaIdL-kwulgjvta"
+
+    struct DiscordPayload: Codable {
+        let username: String?
+        let content: String?
+        let embeds: [Embed]?
+
+        struct Embed: Codable {
+            let title: String?
+            let description: String?
+            let timestamp: String?
+        }
+    }
+
+    func send(subject: String, details: String, diagnostics: BugReportDiagnostics?) async throws {
+        guard let url = URL(string: webhookURLString) else {
+            throw URLError(.badURL)
+        }
+
+        let trimmedSubject = subject.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var descriptionParts: [String] = []
+
+        if !trimmedDetails.isEmpty {
+            descriptionParts.append(trimmedDetails)
+        }
+        if let diagnostics {
+            descriptionParts.append("\n**Diagnostics**\n```\n\(diagnostics.asMarkdown)\n```")
+        }
+
+        let fullDescription = descriptionParts.joined(separator: "\n\n")
+        let safeDescription = BugReportService.truncate(fullDescription, max: 3500)
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let timestamp = formatter.string(from: Date())
+
+        let payload = DiscordPayload(
+            username: "Brockbuster Bug Reporter",
+            content: nil,
+            embeds: [
+                .init(
+                    title: trimmedSubject.isEmpty ? "Bug Report" : BugReportService.truncate(trimmedSubject, max: 200),
+                    description: safeDescription.isEmpty ? "(no details provided)" : safeDescription,
+                    timestamp: timestamp
+                )
+            ]
+        )
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard (200...299).contains(http.statusCode) else {
+            throw NSError(domain: "BugReportService", code: http.statusCode, userInfo: [
+                NSLocalizedDescriptionKey: "Discord returned HTTP \(http.statusCode)."
+            ])
+        }
+    }
+
+    private static func truncate(_ value: String, max: Int) -> String {
+        guard value.count > max else { return value }
+        let idx = value.index(value.startIndex, offsetBy: max)
+        return String(value[..<idx]) + "…"
+    }
+}
+
+
 /// Placeholder settings view to demonstrate adding additional pages. You can
 /// customize this with real settings for the app such as theme, cache management,
 /// and account linking.
+@MainActor
 struct SettingsTab: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var accountManager: AccountManager
+
+    // Session-derived values (kept local to this view to avoid cross-type scope issues).
+    private var currentUsername: String {
+        session.currentUser?.name ?? "Not signed in"
+    }
+
+    private var currentServer: String {
+        session.serverURL.host ?? session.serverURL.absoluteString
+    }
 
     @AppStorage("settings.defaultRememberAccount") private var defaultRememberAccount: Bool = true
     @AppStorage("settings.showAccountChooserOnLaunch") private var showAccountChooserOnLaunch: Bool = true
@@ -250,6 +553,8 @@ struct SettingsTab: View {
     @State private var clearCacheOnLogout: Bool = false
     @State private var preferDarkMode: Bool = true
 
+    @State private var presentBugReport: Bool = false
+
     var body: some View {
         #if os(tvOS)
         tvSettingsLayout
@@ -259,13 +564,13 @@ struct SettingsTab: View {
                 HStack {
                     Text("Username")
                     Spacer()
-                    Text(session.currentUser?.name ?? "Not signed in")
+                    Text(currentUsername)
                         .foregroundColor(.secondary)
                 }
                 HStack {
                     Text("Server")
                     Spacer()
-                    Text(session.serverURL.host ?? session.serverURL.absoluteString)
+                    Text(currentServer)
                         .foregroundColor(.secondary)
                 }
                 if let join = session.joinDate {
@@ -322,11 +627,25 @@ struct SettingsTab: View {
                     .font(.footnote)
                     .foregroundColor(.secondary)
             }
+
+            Section(header: Text("Support")) {
+                Button {
+                    presentBugReport = true
+                } label: {
+                    Label("Report a Bug", systemImage: "ladybug")
+                }
+            }
         }
         .navigationTitle("Settings")
         #if !os(macOS)
         .bbNavigationTitleInline()
         #endif
+        .sheet(isPresented: $presentBugReport) {
+            NavigationStack {
+                BugReportView(entryPoint: .settings)
+                    .environmentObject(session)
+            }
+        }
         #endif
     }
 
@@ -348,8 +667,8 @@ struct SettingsTab: View {
                         .padding(.top, 6)
 
                     MoreSectionCard(title: "Account") {
-                        SettingsInfoRow(title: "Username", value: session.currentUser?.name ?? "Not signed in")
-                        SettingsInfoRow(title: "Server", value: session.serverURL.host ?? session.serverURL.absoluteString)
+                        SettingsInfoRow(title: "Username", value: currentUsername)
+                        SettingsInfoRow(title: "Server", value: currentServer)
                         if let join = session.joinDate {
                             SettingsInfoRow(title: "Member Since", value: join.formatted(date: .abbreviated, time: .omitted))
                         }
@@ -401,6 +720,16 @@ struct SettingsTab: View {
                             .padding(.horizontal, 6)
                     }
 
+                    MoreSectionCard(title: "Support") {
+                        Button {
+                            presentBugReport = true
+                        } label: {
+                            MoreRow(title: "Report a Bug", systemImage: "ladybug")
+                        }
+                        .buttonStyle(.plain)
+                        .bbTVFocusCard(cornerRadius: 18)
+                    }
+
                     Spacer(minLength: 28)
                 }
                 .padding(.horizontal, 46)
@@ -411,6 +740,12 @@ struct SettingsTab: View {
         }
         .navigationTitle("Settings")
         .bbNavigationTitleInline()
+        .sheet(isPresented: $presentBugReport) {
+            NavigationStack {
+                BugReportView(entryPoint: .settings)
+                    .environmentObject(session)
+            }
+        }
     }
     #endif
 }

@@ -1,5 +1,9 @@
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 @main
 struct BrockbusterApp: App {
     @StateObject private var session = SessionStore()
@@ -27,6 +31,7 @@ struct BrockbusterApp: App {
                 .environmentObject(session)
                 .environmentObject(accountManager)
                 .environmentObject(nowPlaying)
+                .bbEnableBugReportShake(session: session)
         }
     }
 
@@ -51,5 +56,62 @@ struct BrockbusterApp: App {
             // friends, server health and social feed.
             MainTabView()
         }
+    }
+}
+
+// MARK: - Shake to Report Bug (iPhone only)
+
+private extension Notification.Name {
+    static let bbDeviceDidShake = Notification.Name("bbDeviceDidShake")
+}
+
+#if canImport(UIKit) && !os(tvOS)
+private extension UIWindow {
+    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+        super.motionEnded(motion, with: event)
+        guard motion == .motionShake else { return }
+        NotificationCenter.default.post(name: .bbDeviceDidShake, object: nil)
+    }
+}
+
+private struct BugReportShakePresenter: ViewModifier {
+    @ObservedObject var session: SessionStore
+
+    @State private var confirmShakeReport: Bool = false
+    @State private var presentBugReport: Bool = false
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .bbDeviceDidShake)) { _ in
+                guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+                confirmShakeReport = true
+            }
+            .alert("Report a bug?", isPresented: $confirmShakeReport) {
+                Button("Cancel", role: .cancel) {}
+                Button("Report") {
+                    presentBugReport = true
+                }
+            } message: {
+                Text("Shake detected. Would you like to send a bug report?")
+            }
+            .sheet(isPresented: $presentBugReport) {
+                NavigationStack {
+                    BugReportView(entryPoint: .shake)
+                        .environmentObject(session)
+                }
+            }
+    }
+}
+#endif
+
+extension View {
+    /// Enables the iPhone-only shake gesture to trigger a "Report a Bug" prompt.
+    @ViewBuilder
+    func bbEnableBugReportShake(session: SessionStore) -> some View {
+        #if canImport(UIKit) && !os(tvOS)
+        self.modifier(BugReportShakePresenter(session: session))
+        #else
+        self
+        #endif
     }
 }

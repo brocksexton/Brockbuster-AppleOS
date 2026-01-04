@@ -21,6 +21,15 @@ struct DownloadRecord: Identifiable, Codable, Equatable {
     let seasonNumber: Int?
     let episodeNumber: Int?
 
+    // Cached metadata/artwork (best-effort). Optional so older persisted
+    // records remain forward-compatible.
+    var overview: String?
+    var productionYear: Int?
+    var runtimeTicks: Int?
+    var primaryImageTag: String?
+    /// Relative path under Application Support/Brockbuster for a cached poster.
+    var cachedPosterRelativePath: String?
+
     let serverKey: String
     let userId: String?
 
@@ -49,6 +58,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
     private let persistenceURL: URL
     private let downloadsRootURL: URL
+    private let artworkRootURL: URL
 
     // MARK: - Static Path Helpers
 
@@ -106,6 +116,11 @@ final class DownloadManager: NSObject, ObservableObject {
             try? fm.createDirectory(at: downloadsRootURL, withIntermediateDirectories: true)
         }
 
+        self.artworkRootURL = root.appendingPathComponent("Artwork", isDirectory: true)
+        if !fm.fileExists(atPath: artworkRootURL.path) {
+            try? fm.createDirectory(at: artworkRootURL, withIntermediateDirectories: true)
+        }
+
         super.init()
 
         loadPersisted()
@@ -142,11 +157,17 @@ final class DownloadManager: NSObject, ObservableObject {
         var record = DownloadRecord(
             id: UUID(),
             itemId: item.id,
-            itemName: item.name ?? "Untitled",
+            itemName: item.name,
             mediaType: item.mediaType ?? item.type,
             seriesName: item.seriesName,
             seasonNumber: item.parentIndexNumber,
             episodeNumber: item.indexNumber,
+
+            overview: item.overview,
+            productionYear: item.productionYear,
+            runtimeTicks: item.runtimeTicks,
+            primaryImageTag: item.primaryImageTag,
+            cachedPosterRelativePath: nil,
             serverKey: serverKey,
             userId: userId,
             state: .queued,
@@ -170,9 +191,22 @@ final class DownloadManager: NSObject, ObservableObject {
         // Upsert and persist first so UI updates immediately.
         upsert(record)
 
+        // Best-effort: hydrate metadata and cache artwork for offline browsing.
+        Task { [weak self] in
+            guard let self else { return }
+            await self.hydrateMetadataAndArtwork(recordId: record.id, itemId: item.id, sessionStore: sessionStore)
+        }
+
         Task {
             await startDownload(recordId: record.id, itemId: item.id, sessionStore: sessionStore)
         }
+    }
+
+    func cachedPosterURL(for record: DownloadRecord) -> URL? {
+        guard let rel = record.cachedPosterRelativePath else { return nil }
+        let root = (persistenceURL.deletingLastPathComponent())
+        let url = root.appendingPathComponent(rel)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     func remove(record: DownloadRecord) {
@@ -289,6 +323,49 @@ final class DownloadManager: NSObject, ObservableObject {
                 rec.errorDescription = error.localizedDescription
                 rec.updatedAt = Date()
             }
+        }
+    }
+
+    /// Fetch richer item metadata and cache a Primary poster image for offline
+    /// browsing. Best-effort; failures are silently ignored.
+    private func hydrateMetadataAndArtwork(recordId: UUID, itemId: String, sessionStore: SessionStore) async {
+        // Only attempt when we have a logged in user (needed for item details).
+        guard sessionStore.currentUser != nil else { return }
+
+        do {
+            let detail = try await sessionStore.fetchItemDetails(itemId: itemId)
+
+            // Update metadata immediately.
+            update(recordId: recordId) { rec in
+                rec.overview = detail.overview
+                rec.productionYear = detail.productionYear
+                rec.runtimeTicks = detail.runTimeTicks
+                rec.primaryImageTag = detail.primaryImageTag
+                rec.updatedAt = Date()
+            }
+
+            // Cache poster image (Primary).
+            guard let imgURL = sessionStore.itemImageURL(for: detail, kind: "Primary", maxWidth: 520) else { return }
+
+            var request = URLRequest(url: imgURL)
+            request.timeoutInterval = 20
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return }
+            guard !data.isEmpty else { return }
+
+            let posterRel = "Artwork/\(recordId.uuidString).jpg"
+            let posterURL = artworkRootURL.appendingPathComponent("\(recordId.uuidString).jpg")
+
+            try? data.write(to: posterURL, options: [.atomic])
+
+            update(recordId: recordId) { rec in
+                rec.cachedPosterRelativePath = posterRel
+                rec.updatedAt = Date()
+            }
+        } catch {
+            // Non-fatal.
+            return
         }
     }
 

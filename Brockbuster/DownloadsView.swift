@@ -41,7 +41,11 @@ struct DownloadsView: View {
                             SectionHeader(title: "Downloading", subtitle: "In progress")
                             VStack(spacing: 10) {
                                 ForEach(activeRecords) { rec in
-                                    DownloadRow(record: rec, isManaging: isManaging) {
+                                    DownloadRow(
+                                        record: rec,
+                                        posterURL: downloads.cachedPosterURL(for: rec) ?? remotePosterURL(for: rec),
+                                        isManaging: isManaging
+                                    ) {
                                         downloads.remove(record: rec)
                                     }
                                 }
@@ -53,9 +57,13 @@ struct DownloadsView: View {
                             VStack(spacing: 10) {
                                 ForEach(completedRecords) { rec in
                                     NavigationLink {
-                                        offlineDestination(for: rec)
+                                        DownloadedItemDetailView(recordId: rec.id)
                                     } label: {
-                                        DownloadRow(record: rec, isManaging: isManaging) {
+                                        DownloadRow(
+                                            record: rec,
+                                            posterURL: downloads.cachedPosterURL(for: rec) ?? remotePosterURL(for: rec),
+                                            isManaging: isManaging
+                                        ) {
                                             downloads.remove(record: rec)
                                         }
                                     }
@@ -82,7 +90,11 @@ struct DownloadsView: View {
                             SectionHeader(title: "Failed", subtitle: "Needs attention")
                             VStack(spacing: 10) {
                                 ForEach(failedRecords) { rec in
-                                    DownloadRow(record: rec, isManaging: isManaging) {
+                                    DownloadRow(
+                                        record: rec,
+                                        posterURL: downloads.cachedPosterURL(for: rec) ?? remotePosterURL(for: rec),
+                                        isManaging: isManaging
+                                    ) {
                                         downloads.remove(record: rec)
                                     }
                                         .contextMenu {
@@ -321,6 +333,11 @@ struct DownloadsView: View {
         }
         return series
     }
+
+    private func remotePosterURL(for record: DownloadRecord) -> URL? {
+        guard session.connectionState == .online else { return nil }
+        return session.itemImageURL(itemId: record.itemId, kind: "Primary", maxWidth: 360)
+    }
 }
 
 private struct SectionHeader: View {
@@ -359,14 +376,24 @@ private struct EmptyDownloadsCard: View {
 
 private struct DownloadRow: View {
     let record: DownloadRecord
+    let posterURL: URL?
     var isManaging: Bool = false
     var onDelete: (() -> Void)? = nil
 
     var body: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .top, spacing: 12) {
+                    DownloadRowPoster(url: posterURL)
+                        .frame(width: 54, height: 78)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(BrockbusterTheme.brockBlue.opacity(0.30), lineWidth: 1)
+                        )
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 2) {
                         Text(record.itemName)
                             .font(.system(size: 15, weight: .bold, design: .rounded))
                             .foregroundColor(BrockbusterTheme.brockLight)
@@ -382,14 +409,14 @@ private struct DownloadRow: View {
                                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                                 .foregroundColor(BrockbusterTheme.brockLight.opacity(0.60))
                         }
-                    }
+                        }
 
-                    Spacer()
+                        Spacer(minLength: 0)
 
-                    HStack(spacing: 10) {
-                        statusPill
+                        HStack(spacing: 10) {
+                            statusPill
 
-                        if isManaging, let onDelete {
+                            if isManaging, let onDelete {
                             Button(role: .destructive) {
                                 onDelete()
                             } label: {
@@ -406,6 +433,7 @@ private struct DownloadRow: View {
                                     )
                             }
                             .buttonStyle(.plain)
+                            }
                         }
                     }
                 }
@@ -482,6 +510,62 @@ private struct DownloadRow: View {
             return "Offline"
         case .failed:
             return "Failed"
+        }
+    }
+}
+
+private struct DownloadRowPoster: View {
+    let url: URL?
+
+    @State private var image: Image? = nil
+
+    var body: some View {
+        Group {
+            if let image {
+                image
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.ultraThinMaterial)
+
+                    Image(systemName: "film")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(BrockbusterTheme.brockLight.opacity(0.70))
+                }
+                .task {
+                    await load()
+                }
+            }
+        }
+        .clipped()
+    }
+
+    private func load() async {
+        guard let url else { return }
+        if url.isFileURL {
+            #if os(iOS) || os(tvOS) || os(watchOS)
+            if let data = try? Data(contentsOf: url), let ui = UIImage(data: data) {
+                image = Image(uiImage: ui)
+            }
+            #elseif os(macOS)
+            if let data = try? Data(contentsOf: url), let ns = NSImage(data: data) {
+                image = Image(nsImage: ns)
+            }
+            #endif
+        } else {
+            if let (data, _) = try? await URLSession.shared.data(from: url) {
+                #if os(iOS) || os(tvOS) || os(watchOS)
+                if let ui = UIImage(data: data) {
+                    image = Image(uiImage: ui)
+                }
+                #elseif os(macOS)
+                if let ns = NSImage(data: data) {
+                    image = Image(nsImage: ns)
+                }
+                #endif
+            }
         }
     }
 }

@@ -315,6 +315,92 @@ final class NowPlayingManager: ObservableObject {
         }
     }
 
+    /// Play a local file URL (offline download) while keeping the unified
+    /// Now Playing surface (bar + fullscreen) working.
+    func playOffline(
+        itemId: String,
+        title: String,
+        subtitle: String?,
+        posterURL: URL?,
+        startPositionTicks: Int = 0,
+        mediaKind: MediaKind = .other,
+        seriesTitle: String? = nil,
+        seasonNumber: Int? = nil,
+        episodeNumber: Int? = nil,
+        episodeTitle: String? = nil,
+        localURL: URL
+    ) {
+        Task {
+            // Present immediately for a responsive transition.
+            isPreparingPlayback = false
+            isPlayerPresented = true
+
+            // Offline playback should not report progress to the server unless
+            // a session is explicitly set up elsewhere.
+            sessionRef = nil
+
+            // Replace any existing playback.
+            #if canImport(MediaPlayer)
+            clearSystemNowPlaying()
+            #endif
+
+            #if canImport(ActivityKit)
+            LiveActivityManager.shared.end()
+            #endif
+
+            teardownPlayer()
+
+            item = NowPlayingItem(
+                id: itemId,
+                title: title,
+                subtitle: subtitle,
+                posterURL: posterURL,
+                playbackContext: nil,
+                startPositionTicks: startPositionTicks,
+                seriesTitle: seriesTitle,
+                seasonNumber: seasonNumber,
+                episodeNumber: episodeNumber,
+                episodeTitle: episodeTitle,
+                mediaKind: mediaKind,
+                episodeContext: nil
+            )
+
+            upNext = nil
+            introWindow = nil
+            hasPreparedUpNext = false
+            autoplayCancelled = false
+
+            // Ensure the fullscreen cover commits before audio starts.
+            await Task.yield()
+
+            setupPlayer(url: localURL, startPositionTicks: startPositionTicks)
+
+            #if canImport(MediaPlayer)
+            configureAudioSessionForPlaybackIfPossible()
+            configureRemoteCommandsIfNeeded()
+            updateSystemNowPlayingInfo()
+            updateSystemNowPlayingArtworkIfNeeded()
+            #endif
+
+            #if canImport(ActivityKit)
+            let startSeconds = SessionStore.ticksToSeconds(startPositionTicks)
+            LiveActivityManager.shared.startIfNeeded(
+                itemId: itemId,
+                posterURL: posterURL,
+                title: title,
+                subtitle: subtitle,
+                isPlaying: true,
+                positionSeconds: startSeconds,
+                durationSeconds: 0,
+                seriesTitle: seriesTitle,
+                seasonNumber: seasonNumber,
+                episodeNumber: episodeNumber,
+                episodeTitle: episodeTitle
+            )
+            #endif
+        }
+    }
+
     /// User opted out of autoplay for the current episode.
     func cancelAutoplayNext() {
         autoplayCancelled = true

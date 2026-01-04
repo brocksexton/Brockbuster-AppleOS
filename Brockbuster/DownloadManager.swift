@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AVFoundation
 
 /// Represents the lifecycle state of an offline download.
 enum DownloadState: String, Codable {
@@ -411,6 +412,27 @@ extension DownloadManager: URLSessionDownloadDelegate {
             }
             // IMPORTANT: move the file synchronously before returning.
             try fm.moveItem(at: location, to: dest)
+
+            // Validate the on-disk asset is playable by AVFoundation. This helps
+            // surface codec/container issues immediately (rather than failing later
+            // when the user taps Play offline).
+            let asset = AVURLAsset(url: dest)
+            let playable = asset.isPlayable
+            // Some files can return true but still have no decodable tracks.
+            let hasTracks = !asset.tracks.isEmpty
+            if !playable || !hasTracks {
+                // Best effort: remove the unusable file.
+                try? fm.removeItem(at: dest)
+                Task { @MainActor in
+                    self.update(recordId: recordId) { rec in
+                        rec.state = .failed
+                        rec.progress = 0
+                        rec.errorDescription = "Downloaded file is not playable on this device. Try re-downloading (compatible) or streaming instead."
+                        rec.updatedAt = Date()
+                    }
+                }
+                return
+            }
 
             Task { @MainActor in
                 self.update(recordId: recordId) { rec in

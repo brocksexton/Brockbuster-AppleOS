@@ -13,6 +13,9 @@ struct DownloadsView: View {
         self.serverKeyOverride = serverKeyOverride
     }
 
+    @State private var sortOption: SortOption = .recent
+    @State private var isManaging: Bool = false
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -29,6 +32,8 @@ struct DownloadsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header
 
+                    controls
+
                     if activeRecords.isEmpty && completedRecords.isEmpty && failedRecords.isEmpty {
                         EmptyDownloadsCard()
                     } else {
@@ -36,7 +41,9 @@ struct DownloadsView: View {
                             SectionHeader(title: "Downloading", subtitle: "In progress")
                             VStack(spacing: 10) {
                                 ForEach(activeRecords) { rec in
-                                    DownloadRow(record: rec)
+                                    DownloadRow(record: rec, isManaging: isManaging) {
+                                        downloads.remove(record: rec)
+                                    }
                                 }
                             }
                         }
@@ -48,7 +55,9 @@ struct DownloadsView: View {
                                     NavigationLink {
                                         offlineDestination(for: rec)
                                     } label: {
-                                        DownloadRow(record: rec)
+                                        DownloadRow(record: rec, isManaging: isManaging) {
+                                            downloads.remove(record: rec)
+                                        }
                                     }
                                     .buttonStyle(.plain)
                                     .contextMenu {
@@ -73,7 +82,9 @@ struct DownloadsView: View {
                             SectionHeader(title: "Failed", subtitle: "Needs attention")
                             VStack(spacing: 10) {
                                 ForEach(failedRecords) { rec in
-                                    DownloadRow(record: rec)
+                                    DownloadRow(record: rec, isManaging: isManaging) {
+                                        downloads.remove(record: rec)
+                                    }
                                         .contextMenu {
                                             Button {
                                                 downloads.enqueue(item: JellyfinClient.LibraryItem(
@@ -154,18 +165,48 @@ struct DownloadsView: View {
     }
 
     private var activeRecords: [DownloadRecord] {
-        scopedRecords
-            .filter { $0.state == .queued || $0.state == .downloading || $0.state == .paused }
+        sorted(scopedRecords
+            .filter { $0.state == .queued || $0.state == .downloading || $0.state == .paused })
     }
 
     private var completedRecords: [DownloadRecord] {
-        scopedRecords
-            .filter { $0.state == .completed }
+        sorted(scopedRecords
+            .filter { $0.state == .completed })
     }
 
     private var failedRecords: [DownloadRecord] {
-        scopedRecords
-            .filter { $0.state == .failed }
+        sorted(scopedRecords
+            .filter { $0.state == .failed })
+    }
+
+    private enum SortOption: String, CaseIterable, Identifiable {
+        case recent = "Recently added"
+        case title = "Title"
+        case series = "Series"
+        case size = "Size"
+        case progress = "Progress"
+
+        var id: String { rawValue }
+    }
+
+    private func sorted(_ records: [DownloadRecord]) -> [DownloadRecord] {
+        switch sortOption {
+        case .recent:
+            return records.sorted { $0.updatedAt > $1.updatedAt }
+        case .title:
+            return records.sorted { $0.itemName.localizedCaseInsensitiveCompare($1.itemName) == .orderedAscending }
+        case .series:
+            return records.sorted {
+                let a = ($0.seriesName ?? "").lowercased()
+                let b = ($1.seriesName ?? "").lowercased()
+                if a == b { return $0.itemName.lowercased() < $1.itemName.lowercased() }
+                return a < b
+            }
+        case .size:
+            return records.sorted { ($0.bytesExpected ?? 0) > ($1.bytesExpected ?? 0) }
+        case .progress:
+            return records.sorted { $0.progress > $1.progress }
+        }
     }
 
     /// When offline (or if the session user is temporarily nil), we still want to show
@@ -189,6 +230,59 @@ struct DownloadsView: View {
                 .foregroundColor(BrockbusterTheme.brockLight.opacity(0.82))
         }
         .padding(.top, 4)
+    }
+
+    private var controls: some View {
+        HStack(spacing: 10) {
+            Menu {
+                Picker("Sort", selection: $sortOption) {
+                    ForEach(SortOption.allCases) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+            } label: {
+                Label("Sort", systemImage: "arrow.up.arrow.down")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(BrockbusterTheme.brockLight)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(BrockbusterTheme.brockBlue.opacity(0.35), lineWidth: 1)
+                    )
+            }
+
+            Spacer()
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isManaging.toggle()
+                }
+            } label: {
+                Text(isManaging ? "Done" : "Edit")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(isManaging ? BrockbusterTheme.brockDark : BrockbusterTheme.brockLight)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        Group {
+                            if isManaging {
+                                Capsule().fill(BrockbusterTheme.brockGold.opacity(0.9))
+                            } else {
+                                Capsule().fill(.ultraThinMaterial)
+                            }
+                        }
+                    )
+                    .overlay(
+                        Capsule().stroke(BrockbusterTheme.brockBlue.opacity(0.35), lineWidth: 1)
+                    )
+            }
+        }
+        .padding(.top, 2)
     }
 
     @ViewBuilder
@@ -265,6 +359,8 @@ private struct EmptyDownloadsCard: View {
 
 private struct DownloadRow: View {
     let record: DownloadRecord
+    var isManaging: Bool = false
+    var onDelete: (() -> Void)? = nil
 
     var body: some View {
         GlassCard {
@@ -280,11 +376,38 @@ private struct DownloadRow: View {
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                                 .foregroundColor(BrockbusterTheme.brockLight.opacity(0.72))
                         }
+
+                        if let meta = metaLine {
+                            Text(meta)
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .foregroundColor(BrockbusterTheme.brockLight.opacity(0.60))
+                        }
                     }
 
                     Spacer()
 
-                    statusPill
+                    HStack(spacing: 10) {
+                        statusPill
+
+                        if isManaging, let onDelete {
+                            Button(role: .destructive) {
+                                onDelete()
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.red.opacity(0.92))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        Capsule().fill(.ultraThinMaterial)
+                                    )
+                                    .overlay(
+                                        Capsule().stroke(BrockbusterTheme.brockBlue.opacity(0.35), lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
 
                 if record.state == .downloading || record.state == .queued {
@@ -310,6 +433,30 @@ private struct DownloadRow: View {
             return series
         }
         return record.mediaType
+    }
+
+    private var metaLine: String? {
+        var parts: [String] = []
+
+        if let expected = record.bytesExpected, expected > 0 {
+            let f = ByteCountFormatter()
+            f.allowedUnits = [.useGB, .useMB, .useKB, .useBytes]
+            f.countStyle = .file
+            parts.append(f.string(fromByteCount: expected))
+        } else if let written = record.bytesWritten, written > 0 {
+            let f = ByteCountFormatter()
+            f.allowedUnits = [.useGB, .useMB, .useKB, .useBytes]
+            f.countStyle = .file
+            parts.append(f.string(fromByteCount: written))
+        }
+
+        // Show a compact timestamp for user confidence (especially when sorting by Recent).
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        df.timeStyle = .none
+        parts.append(df.string(from: record.updatedAt))
+
+        return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 
     private var statusPill: some View {

@@ -618,16 +618,68 @@ final class SessionStore: ObservableObject {
         let mediaSourceId = playbackInfo.mediaSources.first?.id
         let playSessionId = playbackInfo.playSessionId
 
-        if let url = client.makeStreamURL(
+        guard var url = client.makeStreamURL(
             itemId: itemId,
             mediaSourceId: mediaSourceId,
             playSessionId: playSessionId,
             userId: currentUser?.id
-        ) {
-            return url
+        ) else {
+            throw JellyfinClient.NetworkError.invalidResponse
         }
 
-        throw JellyfinClient.NetworkError.invalidResponse
+        // Offline downloads must be device-decodable.
+        // Streaming playback can transcode on the fly, but downloaded files must be
+        // playable locally by AVPlayer. Use PlaybackInfo to decide when to force a
+        // compatible transcode/remux.
+        let source = playbackInfo.mediaSources.first
+        let container = source?.container?.lowercased()
+        let streams = source?.mediaStreams ?? []
+        let videoCodec = streams.first(where: { ($0.type ?? "").lowercased() == "video" })?.codec?.lowercased()
+        let audioCodec = streams.first(where: { ($0.type ?? "").lowercased() == "audio" })?.codec?.lowercased()
+
+        // Conservative Apple-compatible profile.
+        // - Container: mp4
+        // - Video: h264 (AVC)
+        // - Audio: aac
+        let appleContainers: Set<String> = ["mp4", "m4v", "mov"]
+        let appleVideo: Set<String> = ["h264", "avc", "hevc", "h265"]
+        let appleAudio: Set<String> = ["aac", "alac", "mp3", "ac3", "eac3"]
+
+        let requiresCompatibilityTranscode: Bool = {
+            if let c = container, !appleContainers.contains(c) { return true }
+            if let v = videoCodec, !appleVideo.contains(v) { return true }
+            if let a = audioCodec, !appleAudio.contains(a) { return true }
+            // If we can’t determine codecs (some servers omit MediaStreams), prefer compatibility.
+            if videoCodec == nil || audioCodec == nil { return true }
+            return false
+        }()
+
+        if requiresCompatibilityTranscode {
+            // Append stream parameters that strongly encourage Jellyfin to remux/transcode
+            // into a universally playable offline file.
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            var items = components?.queryItems ?? []
+
+            // Force MP4 container and an Apple-friendly codec set.
+            items.append(URLQueryItem(name: "Container", value: "mp4"))
+            items.append(URLQueryItem(name: "TranscodingContainer", value: "mp4"))
+            items.append(URLQueryItem(name: "VideoCodec", value: "h264"))
+            items.append(URLQueryItem(name: "AudioCodec", value: "aac"))
+            // Avoid "copy" decisions that can preserve unsupported codecs.
+            // For offline files we prefer a guaranteed-decodable transcode.
+            items.append(URLQueryItem(name: "AllowVideoStreamCopy", value: "false"))
+            items.append(URLQueryItem(name: "AllowAudioStreamCopy", value: "false"))
+            items.append(URLQueryItem(name: "MaxAudioChannels", value: "2"))
+            // Help servers that are picky about timestamp/copy behaviour.
+            items.append(URLQueryItem(name: "CopyTimestamps", value: "true"))
+
+            components?.queryItems = items
+            if let coerced = components?.url {
+                url = coerced
+            }
+        }
+
+        return url
     }
 
 

@@ -76,6 +76,7 @@ struct MainTabView: View {
         }
 
         .onAppear {
+            Task { await session.refreshConnectionStatus(userInitiated: false) }
             // Customize tab bar appearance on iOS to improve contrast for unselected items
             #if os(iOS)
             let appearance = UITabBarAppearance()
@@ -92,6 +93,12 @@ struct MainTabView: View {
             }
             #endif
         }
+
+        #if canImport(UIKit)
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Task { await session.refreshConnectionStatus(userInitiated: false) }
+        }
+        #endif
     }
 
     private func nowPlayingBarBottomPadding(safeBottom: CGFloat) -> CGFloat {
@@ -233,6 +240,12 @@ struct ServerHealthTab: View {
                 jellyfinUserId: session.currentUser?.id
             )
         }
+
+        #if canImport(UIKit)
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Task { await session.refreshConnectionStatus(userInitiated: false) }
+        }
+        #endif
     }
 
     private var header: some View {

@@ -7,6 +7,7 @@ import SwiftUI
 /// time without cluttering the main tab bar.
 struct MyBrockbusterView: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var downloads: DownloadManager
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var resumeItems: [JellyfinClient.LibraryItem] = []
@@ -53,6 +54,8 @@ struct MyBrockbusterView: View {
                     header
 
                     quickActions
+
+                    downloadsSection
 
                     if !resumeItems.isEmpty {
                         sectionHeader(title: "Continue Watching", subtitle: "Pick up right where you left off") {
@@ -128,6 +131,51 @@ struct MyBrockbusterView: View {
         .refreshable { await refresh() }
     }
 
+    private var downloadsSection: some View {
+        let serverKey = session.serverURL.host ?? session.serverURL.absoluteString
+        let userId = session.currentUser?.id
+        let scoped = downloads.records.filter { $0.serverKey == serverKey && $0.userId == userId }
+        let active = scoped.filter { $0.state == .queued || $0.state == .downloading || $0.state == .paused }
+        let completed = scoped.filter { $0.state == .completed }
+
+        return Group {
+            if !active.isEmpty || !completed.isEmpty {
+                sectionHeader(title: "Downloads", subtitle: "Offline on this device") {
+                    NavigationLink {
+                        DownloadsView()
+                            .environmentObject(session)
+                            .environmentObject(downloads)
+                    } label: {
+                        Text("Manage")
+                    }
+                }
+
+                if !active.isEmpty {
+                    VStack(spacing: 10) {
+                        ForEach(active.prefix(3)) { rec in
+                            DownloadPreviewRow(record: rec)
+                        }
+                    }
+                }
+
+                if !completed.isEmpty {
+                    VStack(spacing: 10) {
+                        ForEach(completed.prefix(4)) { rec in
+                            NavigationLink {
+                                DownloadsView()
+                                    .environmentObject(session)
+                                    .environmentObject(downloads)
+                            } label: {
+                                DownloadPreviewRow(record: rec)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("My Brockbuster")
@@ -180,20 +228,35 @@ struct MyBrockbusterView: View {
                 .buttonStyle(.plain)
 
                 NavigationLink {
-                    ComingSoonView(
-                        title: "Downloads",
-                        message: "Offline downloads are planned for a future update."
-                    )
+                    DownloadsView()
+                        .environmentObject(session)
+                        .environmentObject(downloads)
                 } label: {
                     QuickActionCard(
                         icon: "arrow.down.circle.fill",
                         title: "Downloads",
-                        subtitle: "Offline later"
+                        subtitle: downloadsSummaryText
                     )
                 }
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    private var downloadsSummaryText: String {
+        let serverKey = session.serverURL.host ?? session.serverURL.absoluteString
+        let userId = session.currentUser?.id
+        let scoped = downloads.records.filter { $0.serverKey == serverKey && $0.userId == userId }
+        let active = scoped.filter { $0.state == .queued || $0.state == .downloading || $0.state == .paused }
+        let completed = scoped.filter { $0.state == .completed }
+
+        if !active.isEmpty {
+            return "\(active.count) active"
+        }
+        if !completed.isEmpty {
+            return "\(completed.count) saved"
+        }
+        return "Offline ready"
     }
 
     private func sectionHeader(title: String, subtitle: String, trailing: () -> some View) -> some View {
@@ -258,6 +321,67 @@ struct MyBrockbusterView: View {
         } catch {
             isLoading = false
             errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct DownloadPreviewRow: View {
+    let record: DownloadRecord
+
+    var body: some View {
+        GlassCard {
+            HStack(spacing: 12) {
+                Image(systemName: iconName)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(BrockbusterTheme.brockGold)
+                    .frame(width: 26)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.itemName)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(BrockbusterTheme.brockLight)
+
+                    Text(subtitleText)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(BrockbusterTheme.brockLight.opacity(0.72))
+                }
+
+                Spacer()
+
+                if record.state == .downloading || record.state == .queued {
+                    Text("\(Int(record.progress * 100))%")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(BrockbusterTheme.brockLight.opacity(0.9))
+                } else if record.state == .completed {
+                    Text("Offline")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(BrockbusterTheme.brockLight.opacity(0.9))
+                } else if record.state == .failed {
+                    Text("Failed")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(.red.opacity(0.85))
+                }
+            }
+            .padding(12)
+        }
+    }
+
+    private var subtitleText: String {
+        if let series = record.seriesName, let s = record.seasonNumber, let e = record.episodeNumber {
+            return "\(series) • S\(s) E\(e)"
+        }
+        if let series = record.seriesName { return series }
+        return record.mediaType ?? ""
+    }
+
+    private var iconName: String {
+        switch record.state {
+        case .queued, .downloading, .paused:
+            return "arrow.down.circle.fill"
+        case .completed:
+            return "checkmark.circle.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
         }
     }
 }

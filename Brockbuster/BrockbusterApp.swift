@@ -9,6 +9,7 @@ struct BrockbusterApp: App {
     @StateObject private var session = SessionStore()
     @StateObject private var accountManager = AccountManager()
     @StateObject private var nowPlaying = NowPlayingManager()
+    @StateObject private var downloads = DownloadManager()
     @AppStorage("settings.showAccountChooserOnLaunch") private var showAccountChooserOnLaunch: Bool = true
 
     init() {
@@ -31,6 +32,7 @@ struct BrockbusterApp: App {
                 .environmentObject(session)
                 .environmentObject(accountManager)
                 .environmentObject(nowPlaying)
+                .environmentObject(downloads)
                 .bbEnableBugReportShake(session: session)
         }
     }
@@ -52,9 +54,14 @@ struct BrockbusterApp: App {
                 LoginView()
             }
         } else {
-            // Logged in: show the tabbed interface with home and placeholders for
-            // friends, server health and social feed.
-            MainTabView()
+            // Logged in: if Brockbuster is unreachable (or we have entered sticky
+            // offline mode), default to offline-first UI.
+            if session.connectionState == .offline || session.offlineModeEnabled {
+                OfflineServerView()
+            } else {
+                // Online (or unknown while we check): show the main tabbed interface.
+                MainTabView()
+            }
         }
     }
 }

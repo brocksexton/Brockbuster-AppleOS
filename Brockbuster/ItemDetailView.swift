@@ -12,6 +12,7 @@ struct ItemDetailView: View {
 
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var nowPlaying: NowPlayingManager
+    @EnvironmentObject private var downloads: DownloadManager
     @Environment(\.colorScheme) private var colorScheme
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -179,7 +180,11 @@ struct ItemDetailView: View {
     private var contentSection: some View {
         Group {
             if isLoading && detail == nil {
-                VStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Even while metadata is still loading, keep primary actions
+                    // discoverable (especially Download on iPhone).
+                    actionRow
+
                     ProgressView("Loading…")
                         .progressViewStyle(CircularProgressViewStyle(tint: BrockbusterTheme.ticketYellow))
                     Text("Fetching details…")
@@ -331,60 +336,223 @@ struct ItemDetailView: View {
         return unique
     }
 
+    private var actionRow: some View {
+        let serverKey = session.serverURL.host ?? session.serverURL.absoluteString
+        let record = downloads.record(for: item.id, serverKey: serverKey, userId: session.currentUser?.id)
 
-private var actionRow: some View {
-        HStack(spacing: 12) {
-            Button(action: playItem) {
-                HStack(spacing: 10) {
-                    Image(systemName: watchState == .inProgress ? "play.fill" : "play.circle.fill")
-                        .font(.headline.weight(.bold))
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Button(action: playItem) {
+                    HStack(spacing: 10) {
+                        Image(systemName: watchState == .inProgress ? "play.fill" : "play.circle.fill")
+                            .font(.headline.weight(.bold))
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(playButtonTitle)
-                            .font(.subheadline.weight(.semibold))
-                        if let hint = playbackHintLine, !hint.isEmpty {
-                            Text(hint)
-                                .font(.caption)
-                                .foregroundStyle(.black.opacity(0.70))
-                                .lineLimit(1)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(playButtonTitle)
+                                .font(.subheadline.weight(.semibold))
+                            if let hint = playbackHintLine, !hint.isEmpty {
+                                Text(hint)
+                                    .font(.caption)
+                                    .foregroundStyle(.black.opacity(0.70))
+                                    .lineLimit(1)
+                            }
                         }
+
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(.black)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 14)
+                    #if os(tvOS)
+                    .frame(maxWidth: 720, alignment: .leading)
+                    #endif
+                    .background(BrockbusterTheme.ticketYellow)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                #if os(tvOS)
+                .bbTVFocusCard(cornerRadius: 20)
+                #endif
+
+                Button {
+                    Task { await toggleFavorite() }
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(.ultraThinMaterial)
+
+                        Image(systemName: isFavorite ? "heart.fill" : "heart")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(isFavorite ? BrockbusterTheme.ticketYellow : BrockbusterTheme.textPrimary)
+                            .padding(12)
+                    }
+                    .frame(width: 52, height: 52)
+                }
+                .buttonStyle(.plain)
+                #if os(tvOS)
+                .bbTVFocusCard(cornerRadius: 18)
+                #endif
+                .disabled(isTogglingFavorite || detail == nil || session.currentUser == nil)
+            }
+
+            // Make downloads discoverable: a full-width secondary button (especially important on iPhone).
+            if isDownloadable {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        downloads.enqueue(item: item, sessionStore: session, entryPoint: "item_detail")
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: downloadButtonIcon(for: record))
+                                .font(.headline.weight(.semibold))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(downloadButtonTitle(for: record))
+                                    .font(.subheadline.weight(.semibold))
+
+                                if let subtitle = downloadButtonSubtitle(for: record), !subtitle.isEmpty {
+                                    Text(subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(BrockbusterTheme.textSecondary)
+                                        .lineLimit(1)
+                                }
+                            }
+
+                            Spacer(minLength: 0)
+
+                            if let pct = downloadPercentText(for: record) {
+                                Text(pct)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrockbusterTheme.textSecondary)
+                            }
+                        }
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    #if os(tvOS)
+                    .bbTVFocusCard(cornerRadius: 18)
+                    #endif
+                    .disabled(downloadButtonDisabled(for: record))
+
+                    if let progress = downloadProgressValue(for: record) {
+                        ProgressView(value: progress)
+                            .progressViewStyle(.linear)
+                            .tint(BrockbusterTheme.ticketYellow)
+                            .padding(.horizontal, 14)
                     }
 
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(.black)
-                .padding(.vertical, 12)
-                .padding(.horizontal, 14)
-                #if os(tvOS)
-                .frame(maxWidth: 720, alignment: .leading)
-                #endif
-                .background(BrockbusterTheme.ticketYellow)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            #if os(tvOS)
-            .bbTVFocusCard(cornerRadius: 20)
-            #endif
+                    if let record, record.state == .failed {
+                        HStack(spacing: 10) {
+                            Label("Download failed", systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.red)
 
-            Button {
-                Task { await toggleFavorite() }
-            } label: {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                            Spacer(minLength: 0)
 
-                    Image(systemName: isFavorite ? "heart.fill" : "heart")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(isFavorite ? BrockbusterTheme.ticketYellow : BrockbusterTheme.textPrimary)
-                        .padding(12)
+                            Button("Retry") {
+                                downloads.retry(record: record, sessionStore: session)
+                            }
+                            .font(.caption.weight(.semibold))
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(.horizontal, 14)
+                    }
                 }
-                .frame(width: 52, height: 52)
             }
-            .buttonStyle(.plain)
-            #if os(tvOS)
-            .bbTVFocusCard(cornerRadius: 18)
-            #endif
-            .disabled(isTogglingFavorite || detail == nil || session.currentUser == nil)
+        }
+    }
+
+    private var isDownloadable: Bool {
+        let type = (item.type ?? "").lowercased()
+        let media = (item.mediaType ?? "").lowercased()
+
+        // Jellyfin commonly uses:
+        //   Type: Movie / Episode
+        //   MediaType: Video
+        // Some endpoints omit MediaType entirely, and some list views only provide MediaType.
+        // Be liberal here so the Download action is reliably visible.
+        // If PlaybackInfo has a media source, the item is playable and therefore downloadable.
+        if let sources = playbackInfo?.mediaSources, !sources.isEmpty { return true }
+
+        if type == "movie" || type == "episode" { return true }
+        if media == "movie" || media == "episode" { return true }
+        if media == "video" && (type == "episode" || type == "movie") { return true }
+
+        // Some list endpoints omit Type/MediaType; infer episode-like items from numbering.
+        if item.parentIndexNumber != nil && item.indexNumber != nil { return true }
+        return false
+    }
+
+    private func downloadProgressValue(for record: DownloadRecord?) -> Double? {
+        guard let record else { return nil }
+        switch record.state {
+        case .downloading, .paused:
+            return max(0.0, min(1.0, record.progress))
+        case .queued, .completed, .failed:
+            return nil
+        }
+    }
+
+    private func downloadPercentText(for record: DownloadRecord?) -> String? {
+        guard let record else { return nil }
+        switch record.state {
+        case .downloading:
+            let pct = Int((max(0.0, min(1.0, record.progress))) * 100.0)
+            return "\(pct)%"
+        case .paused:
+            let pct = Int((max(0.0, min(1.0, record.progress))) * 100.0)
+            return "\(pct)%"
+        case .completed:
+            return "On device"
+        case .queued, .failed:
+            return nil
+        }
+    }
+
+    private func downloadButtonTitle(for record: DownloadRecord?) -> String {
+        guard let record else { return "Download" }
+        switch record.state {
+        case .downloading: return "Downloading"
+        case .paused: return "Paused"
+        case .completed: return "Saved"
+        case .failed: return "Download"
+        case .queued: return "Queued"
+        }
+    }
+
+    private func downloadButtonSubtitle(for record: DownloadRecord?) -> String? {
+        guard let record else { return "Save offline on this device" }
+        switch record.state {
+        case .downloading: return "In progress"
+        case .paused: return "Paused"
+        case .queued: return "Starting…"
+        case .completed: return "Available offline"
+        case .failed:
+            return record.errorDescription ?? "Tap Retry to try again"
+        }
+    }
+
+    private func downloadButtonIcon(for record: DownloadRecord?) -> String {
+        guard let record else { return "arrow.down.circle" }
+        switch record.state {
+        case .downloading: return "arrow.down.circle"
+        case .paused: return "pause.circle"
+        case .queued: return "arrow.down.circle"
+        case .completed: return "checkmark.circle"
+        case .failed: return "exclamationmark.triangle"
+        }
+    }
+
+    private func downloadButtonDisabled(for record: DownloadRecord?) -> Bool {
+        guard let record else { return false }
+        switch record.state {
+        case .completed, .downloading, .queued, .paused:
+            return true
+        case .failed:
+            return false
         }
     }
 

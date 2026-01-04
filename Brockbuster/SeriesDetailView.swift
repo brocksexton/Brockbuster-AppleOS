@@ -6,8 +6,21 @@ import SwiftUI
 /// - Episode list for selected season (with optional episode search)
 struct SeriesDetailView: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var downloads: DownloadManager
     @EnvironmentObject private var nowPlaying: NowPlayingManager
     let series: JellyfinClient.LibraryItem
+
+    /// Stable keys for download lookups.
+    ///
+    /// These are computed properties (not local `let`s inside `body`) so they
+    /// are available from derived views like `episodesSection`.
+    private var serverKey: String {
+        session.serverURL.host ?? session.serverURL.absoluteString
+    }
+
+    private var userId: String? {
+        session.currentUser?.id
+    }
 
     @State private var details: JellyfinClient.ItemDetail?
     @State private var seasons: [JellyfinClient.LibraryItem] = []
@@ -290,6 +303,25 @@ private var primaryPlayRow: some View {
                             .bbTVFocusCard(cornerRadius: 22)
                             #endif
                         }
+                        .contextMenu {
+                            Button {
+                                downloads.enqueue(item: ep, sessionStore: session, entryPoint: "series_episode_row")
+                            } label: {
+                                Label(downloads.isDownloaded(itemId: ep.id, serverKey: serverKey, userId: userId) ? "Saved" : "Download", systemImage: downloads.isDownloaded(itemId: ep.id, serverKey: serverKey, userId: userId) ? "checkmark.circle" : "arrow.down.circle")
+                            }
+                            .disabled(downloads.isDownloaded(itemId: ep.id, serverKey: serverKey, userId: userId))
+                        }
+                        #if !os(tvOS)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button {
+                                downloads.enqueue(item: ep, sessionStore: session, entryPoint: "series_episode_row")
+                            } label: {
+                                Label("Download", systemImage: "arrow.down.circle")
+                            }
+                            .tint(.blue)
+                            .disabled(downloads.isDownloaded(itemId: ep.id, serverKey: serverKey, userId: userId))
+                        }
+                        #endif
                         .buttonStyle(.plain)
                     }
                 }
@@ -633,9 +665,16 @@ private struct InfoPill: View {
 }
 
 private struct EpisodeRow: View {
+    @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var downloads: DownloadManager
+
     let episode: JellyfinClient.LibraryItem
     let seriesFallback: JellyfinClient.LibraryItem?
     var onPlay: (() async -> Void)? = nil
+
+    private var serverKey: String { session.serverURL.host ?? session.serverURL.absoluteString }
+    private var userId: String? { session.currentUser?.id }
+    private var isDownloaded: Bool { downloads.isDownloaded(itemId: episode.id, serverKey: serverKey, userId: userId) }
 
     var body: some View {
         GlassCard {
@@ -696,6 +735,23 @@ private struct EpisodeRow: View {
                         .buttonStyle(.plain)
                     }
 
+                    // Visible download affordance (context menus are easy to miss).
+                    if isEpisodeDownloadable {
+                        Button {
+                            downloads.enqueue(item: episode, sessionStore: session, entryPoint: "series_episode_row")
+                        } label: {
+                            Image(systemName: isDownloaded ? "checkmark.circle" : "arrow.down.circle")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(isDownloaded ? BrockbusterTheme.ticketYellow : .white.opacity(0.85))
+                                .padding(8)
+                                .background(.white.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isDownloaded)
+                        .accessibilityLabel(isDownloaded ? "Saved" : "Download")
+                    }
+
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.55))
@@ -750,6 +806,11 @@ private struct EpisodeRow: View {
         }
         return ep.name ?? "Episode"
     }
+
+    private var isEpisodeDownloadable: Bool {
+        let t = (episode.mediaType ?? episode.type ?? "").lowercased()
+        return t == "episode" || t.isEmpty
+    }
 }
 
 /// A slim, premium progress bar (no hard-coded colors; uses your theme tokens).
@@ -783,6 +844,7 @@ private enum PosterKind {
 /// Convenience wrapper to pull the right image kind for posters/thumbnails.
 private struct PosterImage: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var downloads: DownloadManager
     let item: JellyfinClient.LibraryItem
     let kind: PosterKind
     var fallbackItem: JellyfinClient.LibraryItem? = nil

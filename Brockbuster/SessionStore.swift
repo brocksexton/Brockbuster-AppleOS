@@ -7,6 +7,31 @@ import SwiftUI
 @MainActor
 final class SessionStore: ObservableObject {
 
+    // MARK: - Connectivity
+
+    enum ConnectionState: String, Codable {
+        case unknown
+        case online
+        case offline
+    }
+
+    /// Tracks whether the Brockbuster (Jellyfin) server is reachable.
+    ///
+    /// This is intentionally conservative and only reflects basic connectivity to the
+    /// server's health endpoint.
+    @Published var connectionState: ConnectionState = .unknown
+
+    /// Sticky offline-first mode.
+    ///
+    /// When we detect that Brockbuster/Jellyfin is unreachable, we keep the user
+    /// in an offline-first experience (Downloads) until the user explicitly
+    /// retries and the server health check succeeds. This prevents "offline"
+    /// UI flicker / boot-looping when connectivity is intermittent.
+    @Published var offlineModeEnabled: Bool = false
+
+    /// A human-friendly description of the last connectivity failure (if any).
+    @Published var lastConnectionError: String? = nil
+
     // MARK: - Playback Context
 
     struct PlaybackContext: Sendable, Equatable {
@@ -118,6 +143,53 @@ final class SessionStore: ObservableObject {
         self.libraries = []
         self.isFetchingLibraries = false
         self.itemCache = [:]
+
+        // Perform a lightweight connectivity check on startup.
+        Task { [weak self] in
+            await self?.refreshConnectionStatus()
+        }
+    }
+
+    /// Performs a lightweight reachability check against the server health endpoint.
+    ///
+    /// This should be called on app launch and when returning to foreground.
+    func refreshConnectionStatus(userInitiated: Bool = false) async {
+        // Avoid spamming the server if views call this frequently.
+        // A simple debounce is sufficient for our use case.
+        // (We keep it minimal to avoid introducing a full connectivity subsystem.)
+        do {
+            try await withCheckedThrowingContinuation { continuation in
+                self.client.checkHealth { result in
+                    switch result {
+                    case .success:
+                        continuation.resume(returning: ())
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+
+            // On success, only exit sticky offline mode when the user explicitly
+            // requested a retry. This avoids oscillation between Online and Offline
+            // when the server is intermittently reachable.
+            if userInitiated {
+                self.offlineModeEnabled = false
+            }
+
+            if !self.offlineModeEnabled {
+                if self.connectionState != .online {
+                    self.connectionState = .online
+                }
+                self.lastConnectionError = nil
+            } else {
+                // Keep presenting offline-first UI even if this probe succeeded.
+                self.connectionState = .offline
+            }
+        } catch {
+            self.connectionState = .offline
+            self.lastConnectionError = error.localizedDescription
+            self.offlineModeEnabled = true
+        }
     }
 
     /// Validate the server by checking its health endpoint.  Updates the
@@ -141,6 +213,9 @@ final class SessionStore: ObservableObject {
         serverURL = url
         // Update network client now that the server URL has changed
         client = JellyfinClient(baseURL: url)
+        offlineModeEnabled = false
+        connectionState = .online
+        lastConnectionError = nil
     }
 
     /// Attempt to log in with the given credentials.  On success the user and
@@ -196,6 +271,8 @@ final class SessionStore: ObservableObject {
         currentUser = nil
         serverURL = Self.defaultServerURL
         client = JellyfinClient(baseURL: serverURL)
+        connectionState = .unknown
+        lastConnectionError = nil
         // Reset libraries when server changes
         libraries.removeAll()
         isFetchingLibraries = false
@@ -210,6 +287,7 @@ final class SessionStore: ObservableObject {
         libraries.removeAll()
         isFetchingLibraries = false
         itemCache.removeAll()
+        // Keep the last-known connection state; logging out should not force offline UI.
     }
 
     // MARK: - Helpers
@@ -529,6 +607,27 @@ final class SessionStore: ObservableObject {
     /// Convenience helper that returns only the playable URL.
     func streamURL(for itemId: String) async throws -> URL {
         try await playbackContext(for: itemId).url
+    }
+
+    /// Returns a direct, file-oriented URL suitable for offline downloading.
+    ///
+    /// This intentionally prefers the Videos stream endpoint (static=true) rather than
+    /// HLS playlists so the client receives a single file payload.
+    func downloadURL(for itemId: String) async throws -> URL {
+        let playbackInfo = try await fetchPlaybackInfo(itemId: itemId)
+        let mediaSourceId = playbackInfo.mediaSources.first?.id
+        let playSessionId = playbackInfo.playSessionId
+
+        if let url = client.makeStreamURL(
+            itemId: itemId,
+            mediaSourceId: mediaSourceId,
+            playSessionId: playSessionId,
+            userId: currentUser?.id
+        ) {
+            return url
+        }
+
+        throw JellyfinClient.NetworkError.invalidResponse
     }
 
 

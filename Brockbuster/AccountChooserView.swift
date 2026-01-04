@@ -8,6 +8,7 @@ import SwiftUI
 struct AccountChooserView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var accounts: AccountManager
+    @EnvironmentObject private var downloads: DownloadManager
 
     @State private var showingAddAccount = false
     @State private var errorMessage: String?
@@ -51,6 +52,35 @@ struct AccountChooserView: View {
                         addAccountButton
                             .padding(.horizontal)
                             .padding(.top, 6)
+
+                        if downloads.records.contains(where: { $0.state == .completed }) {
+                            NavigationLink {
+                                OfflineDownloadsHubView()
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "arrow.down.circle")
+                                    Text("Offline Downloads")
+                                        .font(BrockbusterTheme.Fonts.body.weight(.bold))
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.footnote.weight(.semibold))
+                                        .opacity(0.85)
+                                }
+                                .foregroundColor(BrockbusterTheme.brockLight)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .fill(.ultraThinMaterial)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .stroke(BrockbusterTheme.brockBlue.opacity(0.35), lineWidth: 1)
+                                        )
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal)
+                        }
 
                         footer
                     }

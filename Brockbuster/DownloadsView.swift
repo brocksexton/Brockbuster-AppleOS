@@ -5,6 +5,14 @@ struct DownloadsView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var downloads: DownloadManager
 
+    /// Optional override so downloads can be browsed even when the user is not
+    /// signed in (or when the session is pointed at a different server).
+    let serverKeyOverride: String?
+
+    init(serverKeyOverride: String? = nil) {
+        self.serverKeyOverride = serverKeyOverride
+    }
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -142,7 +150,7 @@ struct DownloadsView: View {
     }
 
     private var serverKey: String {
-        session.serverURL.host ?? session.serverURL.absoluteString
+        serverKeyOverride ?? (session.serverURL.host ?? session.serverURL.absoluteString)
     }
 
     private var activeRecords: [DownloadRecord] {

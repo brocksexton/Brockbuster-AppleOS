@@ -29,32 +29,56 @@ struct HomeView: View {
                         header
                         librariesBar
 
-                        if !model.resumeItems.isEmpty {
-                            HomeSection(title: "Continue Watching", style: .card) {
-                                HomeRail(items: model.resumeItems) { item in
-                                    ItemDetailView(item: item).environmentObject(session)
-                                }
-                            }
-                        }
-
-                        if !model.recentMovies.isEmpty {
-                            HomeSection(title: "Recently Added • Movies", style: .card) {
-                                HomeRail(items: model.recentMovies) { item in
-                                    ItemDetailView(item: item).environmentObject(session)
-                                }
-                            }
-                        }
-
-                        if !model.recentShows.isEmpty {
-                            HomeSection(title: "Recently Added • TV", style: .card) {
-                                HomeRail(items: model.recentShows) { item in
-                                    let type = (item.type ?? "").lowercased()
-                                    if type == "series" {
-                                        SeriesDetailView(series: item).environmentObject(session)
-                                    } else {
+                        Group {
+                            if !model.resumeItems.isEmpty {
+                                HomeSection(title: "Continue Watching", style: .card) {
+                                    HomeRail(items: model.resumeItems) { item in
                                         ItemDetailView(item: item).environmentObject(session)
                                     }
                                 }
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            } else if model.isLoadingResume {
+                                HomeSection(title: "Continue Watching", style: .card) {
+                                    HomeRailPlaceholder()
+                                }
+                                .transition(.opacity)
+                            }
+                        }
+
+                        Group {
+                            if !model.recentMovies.isEmpty {
+                                HomeSection(title: "Recently Added • Movies", style: .card) {
+                                    HomeRail(items: model.recentMovies) { item in
+                                        ItemDetailView(item: item).environmentObject(session)
+                                    }
+                                }
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            } else if model.isLoadingRecentMovies {
+                                HomeSection(title: "Recently Added • Movies", style: .card) {
+                                    HomeRailPlaceholder()
+                                }
+                                .transition(.opacity)
+                            }
+                        }
+
+                        Group {
+                            if !model.recentShows.isEmpty {
+                                HomeSection(title: "Recently Added • TV", style: .card) {
+                                    HomeRail(items: model.recentShows) { item in
+                                        let type = (item.type ?? "").lowercased()
+                                        if type == "series" {
+                                            SeriesDetailView(series: item).environmentObject(session)
+                                        } else {
+                                            ItemDetailView(item: item).environmentObject(session)
+                                        }
+                                    }
+                                }
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            } else if model.isLoadingRecentShows {
+                                HomeSection(title: "Recently Added • TV", style: .card) {
+                                    HomeRailPlaceholder()
+                                }
+                                .transition(.opacity)
                             }
                         }
 
@@ -232,6 +256,10 @@ final class HomeFeedViewModel: ObservableObject {
     @Published var recentMovies: [JellyfinClient.LibraryItem] = []
     @Published var recentShows: [JellyfinClient.LibraryItem] = []
 
+    @Published var isLoadingResume: Bool = false
+    @Published var isLoadingRecentMovies: Bool = false
+    @Published var isLoadingRecentShows: Bool = false
+
     private var hasBootstrapped = false
 
     func bootstrapIfNeeded(session: SessionStore) async {
@@ -246,52 +274,88 @@ final class HomeFeedViewModel: ObservableObject {
         }
         preloadProgress = 0.34
 
+        // Allow the user to begin interacting as soon as we have the basics.
+        // Remaining sections will fill in progressively with animations.
+        withAnimation(.easeInOut(duration: 0.25)) {
+            isPreloading = false
+        }
+
         let libs = session.libraries
         let movieLib = libs.first(where: { $0.name.lowercased().contains("movie") })
         let tvLib = libs.first(where: { $0.name.lowercased().contains("tv") || $0.name.lowercased().contains("show") })
 
-        do {
-            resumeItems = try await session.fetchResumeItems(limit: 18)
-        } catch {
-            resumeItems = []
+        // Load sections lazily. They animate in as each request completes.
+        Task { [weak self] in
+            await self?.loadResume(session: session)
         }
-        preloadProgress = 0.58
 
-        if let movieLib {
-            do {
-                recentMovies = try await session.fetchItemsPage(
-                    parentId: movieLib.id,
-                    includeItemTypes: ["Movie"],
-                    sortBy: ["DateCreated"],
-                    sortOrder: "Descending",
-                    limit: 20,
-                    recursive: true
-                )
-            } catch {
-                recentMovies = []
-            }
+        Task { [weak self] in
+            await self?.loadRecentMovies(session: session, movieLibId: movieLib?.id)
         }
-        preloadProgress = 0.78
 
-        if let tvLib {
-            do {
-                recentShows = try await session.fetchItemsPage(
-                    parentId: tvLib.id,
-                    includeItemTypes: ["Series"],
-                    sortBy: ["DateCreated"],
-                    sortOrder: "Descending",
-                    limit: 20,
-                    recursive: true
-                )
-            } catch {
-                recentShows = []
-            }
+        Task { [weak self] in
+            await self?.loadRecentShows(session: session, tvLibId: tvLib?.id)
         }
 
         preloadProgress = 1.0
-        withAnimation(.easeInOut(duration: 0.25)) {
-            isPreloading = false
+    }
+
+    @MainActor
+    private func loadResume(session: SessionStore) async {
+        isLoadingResume = true
+        do {
+            let items = try await session.fetchResumeItems(limit: 18)
+            withAnimation(.easeOut(duration: 0.25)) {
+                resumeItems = items
+            }
+        } catch {
+            resumeItems = []
         }
+        isLoadingResume = false
+    }
+
+    @MainActor
+    private func loadRecentMovies(session: SessionStore, movieLibId: String?) async {
+        guard let movieLibId else { return }
+        isLoadingRecentMovies = true
+        do {
+            let items = try await session.fetchItemsPage(
+                parentId: movieLibId,
+                includeItemTypes: ["Movie"],
+                sortBy: ["DateCreated"],
+                sortOrder: "Descending",
+                limit: 20,
+                recursive: true
+            )
+            withAnimation(.easeOut(duration: 0.25)) {
+                recentMovies = items
+            }
+        } catch {
+            recentMovies = []
+        }
+        isLoadingRecentMovies = false
+    }
+
+    @MainActor
+    private func loadRecentShows(session: SessionStore, tvLibId: String?) async {
+        guard let tvLibId else { return }
+        isLoadingRecentShows = true
+        do {
+            let items = try await session.fetchItemsPage(
+                parentId: tvLibId,
+                includeItemTypes: ["Series"],
+                sortBy: ["DateCreated"],
+                sortOrder: "Descending",
+                limit: 20,
+                recursive: true
+            )
+            withAnimation(.easeOut(duration: 0.25)) {
+                recentShows = items
+            }
+        } catch {
+            recentShows = []
+        }
+        isLoadingRecentShows = false
     }
 
     private static func randomSlogan() -> String {
@@ -426,6 +490,44 @@ private struct SectionSurface: ViewModifier {
                             lineWidth: 1
                         )
                 )
+        }
+    }
+}
+
+/// Lightweight skeleton rail shown while a home section is loading.
+private struct HomeRailPlaceholder: View {
+    @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var cardSize: (w: CGFloat, h: CGFloat) {
+        #if os(tvOS)
+        return (w: 220, h: 330)
+        #else
+        if hSize == .regular {
+            return (w: 180, h: 260)
+        }
+        return (w: 140, h: 200)
+        #endif
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(0..<8, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.06))
+                        .frame(width: cardSize.w, height: cardSize.h)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(BrockbusterTheme.brockBlue.opacity(0.18), lineWidth: 1)
+                        )
+                        .redacted(reason: .placeholder)
+                }
+            }
+            .padding(.vertical, 2)
+            #if os(tvOS)
+            .padding(.vertical, 8)
+            #endif
         }
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 struct LoginView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var accountManager: AccountManager
+    @EnvironmentObject private var downloads: DownloadManager
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -353,6 +354,18 @@ struct LoginView: View {
             }
             .foregroundColor(BrockbusterTheme.brockGold)
             .padding(.top, 2)
+
+            if downloads.records.contains(where: { $0.state == .completed }) {
+                NavigationLink {
+                    OfflineDownloadsHubView()
+                } label: {
+                    Text("Offline Downloads")
+                        .font(.footnote.weight(.semibold))
+                        .underline()
+                }
+                .foregroundColor(BrockbusterTheme.brockLight.opacity(0.9))
+                .padding(.top, 2)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -421,6 +434,18 @@ struct LoginView: View {
                 }
                 .foregroundColor(BrockbusterTheme.brockGold)
                 .padding(.top, 2)
+
+            if downloads.records.contains(where: { $0.state == .completed }) {
+                NavigationLink {
+                    OfflineDownloadsHubView()
+                } label: {
+                    Text("Offline Downloads")
+                        .font(.footnote.weight(.semibold))
+                        .underline()
+                }
+                .foregroundColor(BrockbusterTheme.brockLight.opacity(0.92))
+                .padding(.top, 2)
+            }
             }
         }
         .frame(maxWidth: maxWidth)

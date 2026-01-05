@@ -1182,6 +1182,48 @@ func fetchMediaSegments(itemId: String, completion: @escaping (Result<[MediaSegm
         return components.url
     }
 
+
+    /// Build a direct video stream URL with an explicit container extension.
+    ///
+    /// Jellyfin exposes `GET /Videos/{itemId}/stream.{container}` which can be used to
+    /// request a specific output container (and, with query parameters, a transcode).
+    ///
+    /// - Parameters:
+    ///   - container: The desired container extension (e.g. "mp4", "mkv").
+    ///   - isStatic: If true, Jellyfin will attempt to stream the original file without encoding.
+    func makeStreamURLByContainer(
+        itemId: String,
+        container: String,
+        mediaSourceId: String?,
+        playSessionId: String?,
+        userId: String?,
+        isStatic: Bool? = nil
+    ) -> URL? {
+        var components = URLComponents(
+            url: baseURL.appendingPathComponent("Videos/\(itemId)/stream.\(container)"),
+            resolvingAgainstBaseURL: false
+        )!
+        var query: [URLQueryItem] = []
+        if let isStatic {
+            query.append(URLQueryItem(name: "static", value: isStatic ? "true" : "false"))
+        }
+        if let mediaSourceId = mediaSourceId {
+            query.append(URLQueryItem(name: "mediaSourceId", value: mediaSourceId))
+        }
+        if let playSessionId = playSessionId {
+            query.append(URLQueryItem(name: "playSessionId", value: playSessionId))
+        }
+        if let userId = userId {
+            query.append(URLQueryItem(name: "UserId", value: userId))
+        }
+        query.append(URLQueryItem(name: "DeviceId", value: deviceId))
+        if let token = accessToken {
+            query.append(URLQueryItem(name: "api_key", value: token))
+        }
+        components.queryItems = query
+        return components.url
+    }
+
     /// Build an HLS playlist URL for streaming via m3u8.  Jellyfin will serve
     /// segmented media at `/Videos/{itemId}/main.m3u8` or `/Videos/{itemId}/master.m3u8`.  We default
     /// to `main.m3u8` because this is used by the web client and returns a single

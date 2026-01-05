@@ -236,13 +236,6 @@ struct DownloadedItemDetailView: View {
         }
     }
 
-    private func formattedDate(_ date: Date) -> String {
-        let df = DateFormatter()
-        df.dateStyle = .medium
-        df.timeStyle = .none
-        return df.string(from: date)
-    }
-
     private func play(_ record: DownloadRecord) {
         guard let url = downloads.localFileURL(for: record) else { return }
 
@@ -334,6 +327,13 @@ struct DownloadedItemDetailView: View {
         if hrs > 0 { return "\(hrs)h \(mins)m" }
         return "\(mins)m"
     }
+}
+
+private func formattedDate(_ date: Date) -> String {
+    let df = DateFormatter()
+    df.dateStyle = .medium
+    df.timeStyle = .none
+    return df.string(from: date)
 }
 
 private struct KeyValueRow: View {

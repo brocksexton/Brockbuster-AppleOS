@@ -40,6 +40,7 @@
 /* Begin PBXFileReference section */
 		C11A30102F08CEAE00C0DAA1 /* Brockbuster.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Brockbuster.xcodeproj; sourceTree = "<group>"; };
 		C11A360C2F0B004700C0DAA1 /* Brockbuster.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Brockbuster.xcodeproj; sourceTree = "<group>"; };
+		C11A40702F0B4E4700C0DAA1 /* Brockbuster.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Brockbuster.xcodeproj; sourceTree = "<group>"; };
 		C16E0E372F07562F0083BF0F /* Brockbuster.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Brockbuster.xcodeproj; sourceTree = "<group>"; };
 		C1C874672F04A3C200ECEC07 /* Brockbuster.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Brockbuster.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1C874752F04A3C400ECEC07 /* BrockbusterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BrockbusterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -136,6 +137,13 @@
 			sourceTree = "<group>";
 		};
 		C11A360F2F0B004700C0DAA1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C11A40732F0B4E4700C0DAA1 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -361,6 +369,10 @@
 			productRefGroup = C1C874682F04A3C200ECEC07 /* Products */;
 			projectDirPath = "";
 			projectReferences = (
+				{
+					ProductGroup = C11A40732F0B4E4700C0DAA1 /* Products */;
+					ProjectRef = C11A40702F0B4E4700C0DAA1 /* Brockbuster.xcodeproj */;
+				},
 				{
 					ProductGroup = C11A360F2F0B004700C0DAA1 /* Products */;
 					ProjectRef = C11A360C2F0B004700C0DAA1 /* Brockbuster.xcodeproj */;

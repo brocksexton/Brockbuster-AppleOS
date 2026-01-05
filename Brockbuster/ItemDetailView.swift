@@ -299,7 +299,7 @@ struct ItemDetailView: View {
             ?? session.itemImageURL(for: item, kind: "Primary", maxWidth: 720)
     }
 
-    
+
     /// Fallback chain for Episode "cover art" (the small poster tile).
     /// Preference:
     /// 1) Season Primary, then Season Thumb
@@ -398,9 +398,51 @@ struct ItemDetailView: View {
             // Make downloads discoverable: a full-width secondary button (especially important on iPhone).
             if isDownloadable {
                 VStack(alignment: .leading, spacing: 8) {
-                    Button {
-                        downloads.enqueue(item: item, sessionStore: session, entryPoint: "item_detail")
-                    } label: {
+                    if let record, record.state == .completed {
+                        NavigationLink {
+                            DownloadedItemDetailView(recordId: record.id)
+                        } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: downloadButtonIcon(for: record))
+                                .font(.headline.weight(.semibold))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(downloadButtonTitle(for: record))
+                                    .font(.subheadline.weight(.semibold))
+
+                                if let subtitle = downloadButtonSubtitle(for: record), !subtitle.isEmpty {
+                                    Text(subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(BrockbusterTheme.textSecondary)
+                                        .lineLimit(1)
+                                }
+                            }
+
+                            Spacer(minLength: 0)
+
+                            if let pct = downloadPercentText(for: record) {
+                                Text(pct)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrockbusterTheme.textSecondary)
+                            }
+                        }
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    #if os(tvOS)
+                    .bbTVFocusCard(cornerRadius: 18)
+                    #endif
+                    .disabled(false)
+
+
+                    } else {
+                        Button {
+                            downloads.enqueue(item: item, sessionStore: session, entryPoint: "item_detail")
+                        } label: {
                         HStack(spacing: 10) {
                             Image(systemName: downloadButtonIcon(for: record))
                                 .font(.headline.weight(.semibold))
@@ -436,6 +478,9 @@ struct ItemDetailView: View {
                     .bbTVFocusCard(cornerRadius: 18)
                     #endif
                     .disabled(downloadButtonDisabled(for: record))
+
+
+                    }
 
                     if let progress = downloadProgressValue(for: record) {
                         ProgressView(value: progress)
@@ -915,7 +960,7 @@ struct ItemDetailView: View {
         return formatISODate(iso)
     }
 
-    
+
     /// Extra bottom inset so content never sits under the custom floating tab bar on iPhone.
     /// (The system safe-area does not account for our custom overlay.)
     private var bottomContentInset: CGFloat {

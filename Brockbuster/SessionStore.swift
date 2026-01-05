@@ -613,7 +613,7 @@ final class SessionStore: ObservableObject {
     ///
     /// This intentionally prefers the Videos stream endpoint (static=true) rather than
     /// HLS playlists so the client receives a single file payload.
-    func downloadURL(for itemId: String) async throws -> URL {
+    func downloadURL(for itemId: String, forceCompatibility: Bool = false) async throws -> URL {
         let playbackInfo = try await fetchPlaybackInfo(itemId: itemId)
         let mediaSourceId = playbackInfo.mediaSources.first?.id
         let playSessionId = playbackInfo.playSessionId
@@ -654,7 +654,21 @@ final class SessionStore: ObservableObject {
             return false
         }()
 
-        if requiresCompatibilityTranscode {
+        let shouldForceCompatibility = forceCompatibility || requiresCompatibilityTranscode
+        if shouldForceCompatibility {
+            // Rebuild the base URL using the explicit container endpoint so the server is allowed
+            // to remux/transcode. NOTE: `static=true` means "original file, no encoding" and must
+            // not be used for compatibility downloads.
+            if let compatBase = client.makeStreamURLByContainer(
+                itemId: itemId,
+                container: "mp4",
+                mediaSourceId: mediaSourceId,
+                playSessionId: playSessionId,
+                userId: currentUser?.id,
+                isStatic: false
+            ) {
+                url = compatBase
+            }
             // Append stream parameters that strongly encourage Jellyfin to remux/transcode
             // into a universally playable offline file.
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)

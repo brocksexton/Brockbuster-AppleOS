@@ -1236,7 +1236,13 @@ func fetchMediaSegments(itemId: String, completion: @escaping (Result<[MediaSegm
     ///   - playSessionId: The playback session id (optional)
     ///   - userId: The user identifier (optional)
     /// - Returns: A URL pointing to the m3u8 playlist
-    func makeHLSURL(itemId: String, mediaSourceId: String?, playSessionId: String?, userId: String?) -> URL? {
+    func makeHLSURL(
+        itemId: String,
+        mediaSourceId: String?,
+        playSessionId: String?,
+        userId: String?,
+        maxStreamingBitrate: Int? = nil
+    ) -> URL? {
         var components = URLComponents(url: baseURL.appendingPathComponent("Videos/\(itemId)/main.m3u8"), resolvingAgainstBaseURL: false)!
         var query: [URLQueryItem] = []
 
@@ -1255,6 +1261,13 @@ func fetchMediaSegments(itemId: String, completion: @escaping (Result<[MediaSegm
         if let userId = userId {
             query.append(URLQueryItem(name: "UserId", value: userId))
         }
+
+        // Optional quality control.
+        // Jellyfin expects bits-per-second (e.g., 8_000_000 for ~8 Mbps).
+        if let maxStreamingBitrate, maxStreamingBitrate > 0 {
+            query.append(URLQueryItem(name: "MaxStreamingBitrate", value: String(maxStreamingBitrate)))
+        }
+
         query.append(URLQueryItem(name: "DeviceId", value: deviceId))
         if let token = accessToken {
             query.append(URLQueryItem(name: "api_key", value: token))

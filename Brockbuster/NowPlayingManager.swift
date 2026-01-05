@@ -16,6 +16,36 @@ import UIKit
 @MainActor
 final class NowPlayingManager: ObservableObject {
 
+    // MARK: - Quality
+
+    enum QualityOption: String, CaseIterable, Identifiable {
+        case auto
+        case high1080
+        case medium720
+        case low480
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .auto: return "Auto"
+            case .high1080: return "High (1080p)"
+            case .medium720: return "Medium (720p)"
+            case .low480: return "Low (480p)"
+            }
+        }
+
+        /// Max streaming bitrate in bits-per-second. Nil means no cap.
+        var maxStreamingBitrate: Int? {
+            switch self {
+            case .auto: return nil
+            case .high1080: return 12_000_000
+            case .medium720: return 6_000_000
+            case .low480: return 2_500_000
+            }
+        }
+    }
+
     // MARK: - Media typing
 
     enum MediaKind: String, Codable {
@@ -70,6 +100,10 @@ final class NowPlayingManager: ObservableObject {
 
     /// The currently playing item (if any).
     @Published private(set) var item: NowPlayingItem?
+
+    /// User-selected quality preference for streaming.
+    /// This is best-effort: the server may still choose an appropriate stream.
+    @Published var quality: QualityOption = .auto
 
     /// True while we are preparing a stream URL / play session.
     /// Used to present the fullscreen player immediately with a loading UI
@@ -126,6 +160,21 @@ final class NowPlayingManager: ObservableObject {
 
     var hasActiveItem: Bool { item != nil }
 
+    /// Best-effort logo image URL for the currently playing item.
+    /// For episodes, prefers the series logo.
+    func logoURL(maxWidth: Int = 700) -> URL? {
+        guard let session = sessionRef else { return nil }
+        guard let current = item else { return nil }
+
+        if current.mediaKind == .episode, let seriesId = current.episodeContext?.seriesId {
+            return session.itemImageURL(itemId: seriesId, kind: "Logo", maxWidth: maxWidth)
+                ?? session.itemImageURL(itemId: seriesId, kind: "Primary", maxWidth: maxWidth)
+        }
+
+        return session.itemImageURL(itemId: current.id, kind: "Logo", maxWidth: maxWidth)
+            ?? session.itemImageURL(itemId: current.id, kind: "Primary", maxWidth: maxWidth)
+    }
+
     func currentPlayer() -> AVPlayer? { _player }
 
     func presentPlayer() {
@@ -150,6 +199,54 @@ final class NowPlayingManager: ObservableObject {
         #if canImport(MediaPlayer)
         updateSystemNowPlayingInfo()
         #endif
+    }
+
+    /// Attempt to switch the active stream to a different quality profile.
+    ///
+    /// Implementation notes:
+    /// - This rebuilds the HLS URL with a MaxStreamingBitrate cap.
+    /// - The player is recreated to ensure the server honors the new profile.
+    /// - Playback resumes at the current position (best effort).
+    func setQuality(_ option: QualityOption) {
+        quality = option
+        guard let current = item else { return }
+        guard let session = sessionRef else { return }
+
+        let resumeTicks = currentPositionTicks
+        isPreparingPlayback = true
+
+        Task {
+            do {
+                let context = try await session.playbackContext(for: current.id, maxStreamingBitrate: option.maxStreamingBitrate)
+                // Preserve reporting context (mediaSourceId/playSessionId) when possible.
+                await MainActor.run {
+                    if let existing = self.item, existing.id == current.id {
+                        self.item = NowPlayingItem(
+                            id: existing.id,
+                            title: existing.title,
+                            subtitle: existing.subtitle,
+                            posterURL: existing.posterURL,
+                            playbackContext: context,
+                            startPositionTicks: existing.startPositionTicks,
+                            seriesTitle: existing.seriesTitle,
+                            seasonNumber: existing.seasonNumber,
+                            episodeNumber: existing.episodeNumber,
+                            episodeTitle: existing.episodeTitle,
+                            mediaKind: existing.mediaKind,
+                            episodeContext: existing.episodeContext
+                        )
+                    }
+
+                    self.teardownPlayer()
+                    self.setupPlayer(url: context.url, startPositionTicks: resumeTicks)
+                    self.isPreparingPlayback = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.isPreparingPlayback = false
+                }
+            }
+        }
     }
 
     /// Stop playback and clear state.

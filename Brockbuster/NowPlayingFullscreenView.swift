@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import AVFoundation
 
 /// Fullscreen player UI driven by NowPlayingManager's AVPlayer.
 /// Uses AVPlayerViewController so we get subtitles/audio selection and PiP.
@@ -14,6 +15,9 @@ struct NowPlayingFullscreenView: View {
     @State private var scrubProgress: Double = 0 // 0...1 while scrubbing
 
     @State private var upNextTick: Int = 0
+
+    @State private var showingSubtitlesMenu: Bool = false
+    @State private var showingQualityMenu: Bool = false
 
     private let upNextTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -121,44 +125,110 @@ struct NowPlayingFullscreenView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 10) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(.black.opacity(0.45), in: Circle())
-            }
-            .buttonStyle(.plain)
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .background(.black.opacity(0.50), in: Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(nowPlaying.item?.title ?? "")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
+                Spacer(minLength: 0)
+
+                HStack(spacing: 10) {
+                    Button { showingSubtitlesMenu = true } label: {
+                        Image(systemName: subtitlesEnabled ? "captions.bubble.fill" : "captions.bubble")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .background(.black.opacity(0.50), in: Circle())
+                            .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { showingQualityMenu = true } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .background(.black.opacity(0.50), in: Circle())
+                            .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        nowPlaying.stop(playedToCompletion: false, failed: false)
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .background(.black.opacity(0.50), in: Circle())
+                            .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            // Blockbuster-style header: prefer a Jellyfin Logo image if available.
+            VStack(spacing: 4) {
+                if let logoURL = nowPlaying.logoURL(maxWidth: 900) {
+                    BBCachedAsyncImage(url: logoURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                        default:
+                            EmptyView()
+                        }
+                    }
+                    .frame(height: 44)
+                    .shadow(color: .black.opacity(0.55), radius: 10, x: 0, y: 6)
+                    .padding(.horizontal, 28)
+                } else {
+                    Text(nowPlaying.item?.title ?? "")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .shadow(color: .black.opacity(0.55), radius: 8, x: 0, y: 5)
+                        .padding(.horizontal, 28)
+                }
 
                 if let sub = nowPlaying.item?.subtitle, !sub.isEmpty {
                     Text(sub)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.85))
                         .lineLimit(1)
+                        .padding(.horizontal, 28)
                 }
             }
-            .padding(.leading, 2)
-
-            Spacer(minLength: 0)
-
-            Button {
-                nowPlaying.stop(playedToCompletion: false, failed: false)
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(.black.opacity(0.45), in: Circle())
-            }
-            .buttonStyle(.plain)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color.blue.opacity(0.26),
+                        Color.yellow.opacity(0.14),
+                        Color.black.opacity(0.22)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(0.10), lineWidth: 1))
+        }
+        .confirmationDialog("Subtitles", isPresented: $showingSubtitlesMenu, titleVisibility: .visible) {
+            subtitleDialogButtons
+        }
+        .confirmationDialog("Quality", isPresented: $showingQualityMenu, titleVisibility: .visible) {
+            qualityDialogButtons
         }
     }
 
@@ -276,6 +346,65 @@ struct NowPlayingFullscreenView: View {
             return String(format: "%d:%02d:%02d", h, m, s)
         }
         return String(format: "%d:%02d", m, s)
+    }
+
+    // MARK: - Subtitles / Quality
+
+    private var subtitleOptions: [AVMediaSelectionOption] {
+        guard let item = nowPlaying.currentPlayer()?.currentItem else { return [] }
+        guard let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return [] }
+        return group.options
+    }
+
+    private var subtitlesEnabled: Bool {
+        guard let item = nowPlaying.currentPlayer()?.currentItem else { return false }
+        guard let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return false }
+        return item.currentMediaSelection.selectedMediaOption(in: group) != nil
+    }
+
+    @ViewBuilder
+    private var subtitleDialogButtons: some View {
+        Button("Off") {
+            selectSubtitle(nil)
+            scheduleOverlayAutoHide()
+        }
+
+        if subtitleOptions.isEmpty {
+            Button("No subtitles available") {}
+                .disabled(true)
+        } else {
+            ForEach(Array(subtitleOptions.enumerated()), id: \.offset) { _, opt in
+                Button(opt.displayName) {
+                    selectSubtitle(opt)
+                    scheduleOverlayAutoHide()
+                }
+            }
+        }
+
+        Button("Cancel", role: .cancel) {}
+    }
+
+    private func selectSubtitle(_ option: AVMediaSelectionOption?) {
+        guard let item = nowPlaying.currentPlayer()?.currentItem else { return }
+        guard let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return }
+        item.select(option, in: group)
+    }
+
+    @ViewBuilder
+    private var qualityDialogButtons: some View {
+        ForEach(NowPlayingManager.QualityOption.allCases) { opt in
+            Button {
+                nowPlaying.setQuality(opt)
+                scheduleOverlayAutoHide()
+            } label: {
+                if nowPlaying.quality == opt {
+                    Label(opt.title, systemImage: "checkmark")
+                } else {
+                    Text(opt.title)
+                }
+            }
+        }
+        Button("Cancel", role: .cancel) {}
     }
 
     // MARK: - Skip Intro

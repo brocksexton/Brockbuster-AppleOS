@@ -563,6 +563,14 @@ final class SessionStore: ObservableObject {
     /// the media source ID and play session ID, then uses the client to build the final URL.
     /// Returns a `PlaybackContext` so the caller can report playback (started/progress/stopped).
     func playbackContext(for itemId: String) async throws -> PlaybackContext {
+        try await playbackContext(for: itemId, maxStreamingBitrate: nil)
+    }
+
+    /// Construct a stream URL for a given item with an optional maximum streaming bitrate.
+    ///
+    /// When `maxStreamingBitrate` is provided, Jellyfin may choose a lower bitrate encode
+    /// (or transcode) depending on server capabilities and the source file.
+    func playbackContext(for itemId: String, maxStreamingBitrate: Int?) async throws -> PlaybackContext {
         let playbackInfo = try await fetchPlaybackInfo(itemId: itemId)
 
         // If a transcodingUrl is provided use it directly, appending the api_key.
@@ -595,7 +603,8 @@ final class SessionStore: ObservableObject {
             itemId: itemId,
             mediaSourceId: mediaSourceId,
             playSessionId: playSessionId,
-            userId: currentUser?.id
+            userId: currentUser?.id,
+            maxStreamingBitrate: maxStreamingBitrate
         ) {
             return PlaybackContext(url: hlsURL, mediaSourceId: mediaSourceId, playSessionId: playSessionId)
         }

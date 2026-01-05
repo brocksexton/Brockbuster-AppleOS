@@ -42,6 +42,12 @@ struct PlayerView: View {
     @State private var currentURL: URL
     @State private var avPlayer: AVPlayer?
     @State private var timeObserverToken: Any?
+    /// High-frequency observer used only for UI (scrubber/time labels).
+    @State private var uiTimeObserverToken: Any?
+    @State private var uiCurrentSeconds: Double = 0
+    @State private var uiDurationSeconds: Double = 0
+    @State private var wasPlayingBeforeScrub: Bool = false
+    @State private var isScrubbing: Bool = false
     @State private var lastProgressReportTicks: Int = 0
     /// Tracks the last known position so we can persist progress even if the
     /// player is dismissed before the periodic progress timer fires.
@@ -109,7 +115,7 @@ struct PlayerView: View {
 
             if showOverlay {
                 overlay
-                    .transition(.opacity)
+                    .transition(AnyTransition.opacity)
                     .onAppear { scheduleOverlayAutoHide() }
             }
 
@@ -126,7 +132,7 @@ struct PlayerView: View {
                     .background(.ultraThinMaterial, in: Capsule())
                     .padding(.bottom, 30)
                 }
-                .transition(.opacity)
+                .transition(AnyTransition.opacity)
             }
         }
         .background(Color.black.ignoresSafeArea())
@@ -194,6 +200,24 @@ struct PlayerView: View {
 
         guard timeObserverToken == nil else { return }
 
+        // High-frequency UI observer (scrubber / labels). We keep this separate
+        // from Jellyfin progress reporting to avoid spamming the server.
+        if uiTimeObserverToken == nil {
+            let uiInterval = CMTime(seconds: 0.25, preferredTimescale: 600)
+            uiTimeObserverToken = player.addPeriodicTimeObserver(forInterval: uiInterval, queue: .main) { _ in
+                guard !isScrubbing else { return }
+                let sec = player.currentTime().seconds
+                if sec.isFinite, sec >= 0 {
+                    uiCurrentSeconds = sec
+                }
+
+                let dur = player.currentItem?.duration.seconds ?? 0
+                if dur.isFinite, dur > 0 {
+                    uiDurationSeconds = dur
+                }
+            }
+        }
+
         // Capture an initial position as soon as the player is attached.
         let initialSeconds = player.currentTime().seconds
         if initialSeconds.isFinite, initialSeconds >= 0 {
@@ -234,6 +258,11 @@ struct PlayerView: View {
             player.removeTimeObserver(token)
         }
         timeObserverToken = nil
+
+        if let token = uiTimeObserverToken, let player = avPlayer {
+            player.removeTimeObserver(token)
+        }
+        uiTimeObserverToken = nil
         avPlayer = nil
     }
 
@@ -279,6 +308,38 @@ struct PlayerView: View {
         )
     }
     private var overlay: some View {
+        VStack(spacing: 0) {
+            topBar
+
+            Spacer(minLength: 0)
+
+            centerControls
+
+            Spacer(minLength: 0)
+
+            bottomControls
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 18)
+        .background(
+            ZStack {
+                LinearGradient(
+                    colors: [Color.black.opacity(0.70), Color.black.opacity(0.0)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                LinearGradient(
+                    colors: [Color.black.opacity(0.0), Color.black.opacity(0.70)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .ignoresSafeArea()
+        )
+    }
+
+    private var topBar: some View {
         HStack(spacing: 12) {
             if let posterURL {
                 BBCachedAsyncImage(url: posterURL, targetSize: CGSize(width: 80, height: 80)) { phase in
@@ -349,17 +410,118 @@ struct PlayerView: View {
             }
             .accessibilityLabel("Close")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
-        .background(
-            LinearGradient(
-                colors: [Color.black.opacity(0.75), Color.black.opacity(0.0)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(edges: .top)
-        )
+    }
+
+    private var centerControls: some View {
+        HStack(spacing: 28) {
+            Button {
+                skip(seconds: -10)
+                showOverlayNow()
+            } label: {
+                Image(systemName: "gobackward.10")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(14)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .accessibilityLabel("Back 10 seconds")
+
+            Button {
+                togglePlayPause()
+                showOverlayNow()
+            } label: {
+                Image(systemName: (avPlayer?.timeControlStatus == .playing) ? "pause.fill" : "play.fill")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(18)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .accessibilityLabel((avPlayer?.timeControlStatus == .playing) ? "Pause" : "Play")
+
+            Button {
+                skip(seconds: 10)
+                showOverlayNow()
+            } label: {
+                Image(systemName: "goforward.10")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(14)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .accessibilityLabel("Forward 10 seconds")
+        }
+    }
+
+    private var bottomControls: some View {
+        VStack(spacing: 10) {
+            scrubber
+        }
+    }
+
+    private var scrubber: some View {
+        VStack(spacing: 6) {
+            Slider(
+                value: Binding(
+                    get: { uiCurrentSeconds },
+                    set: { uiCurrentSeconds = $0 }
+                ),
+                in: 0...max(uiDurationSeconds, 1)
+            ) { editing in
+                handleScrubEditingChanged(editing)
+            }
+
+            HStack {
+                Text(CustomPlayerTimeFormatter.format(uiCurrentSeconds))
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.85))
+
+                Spacer()
+
+                let remaining = max(0, uiDurationSeconds - uiCurrentSeconds)
+                Text("-" + CustomPlayerTimeFormatter.format(remaining))
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.85))
+            }
+        }
+    }
+
+    // MARK: - Custom controls actions
+
+    private func togglePlayPause() {
+        guard let player = avPlayer else { return }
+        if player.timeControlStatus == .playing {
+            player.pause()
+        } else {
+            player.play()
+        }
+    }
+
+    private func skip(seconds: Double) {
+        guard let player = avPlayer else { return }
+        let now = player.currentTime().seconds
+        guard now.isFinite else { return }
+        let target = max(0, now + seconds)
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+        // Keep UI in sync immediately.
+        uiCurrentSeconds = target
+    }
+
+    private func handleScrubEditingChanged(_ isEditing: Bool) {
+        guard let player = avPlayer else { return }
+
+        isScrubbing = isEditing
+
+        if isEditing {
+            wasPlayingBeforeScrub = (player.timeControlStatus == .playing)
+            player.pause()
+        } else {
+            let target = uiCurrentSeconds
+            player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                if wasPlayingBeforeScrub {
+                    player.play()
+                }
+            }
+        }
     }
 
     private func toggleOverlay() {
@@ -511,7 +673,13 @@ struct PlayerViewControllerRepresentable: UIViewControllerRepresentable {
         // Start promptly rather than waiting to buffer a large safety window.
         player.automaticallyWaitsToMinimizeStalling = true
         controller.player = player
+#if os(tvOS)
+        // Keep native controls on tvOS for best focus/remote ergonomics.
         controller.showsPlaybackControls = true
+#else
+        // iOS/iPadOS: we provide a fully custom overlay UI.
+        controller.showsPlaybackControls = false
+#endif
         controller.allowsPictureInPicturePlayback = true
 #if !os(tvOS)
         controller.entersFullScreenWhenPlaybackBegins = false
@@ -622,6 +790,21 @@ struct PlayerViewControllerRepresentable: UIViewControllerRepresentable {
         @objc private func handleTap() {
             onUserInteraction()
         }
+    }
+}
+
+/// Small utility used by the custom player scrubber.
+private enum CustomPlayerTimeFormatter {
+    static func format(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        let total = Int(seconds.rounded(.down))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%d:%02d", m, s)
     }
 }
 

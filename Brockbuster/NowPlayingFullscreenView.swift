@@ -10,6 +10,9 @@ struct NowPlayingFullscreenView: View {
     @State private var overlayVisible: Bool = true
     @State private var overlayHideTask: Task<Void, Never>? = nil
 
+    @State private var isScrubbing: Bool = false
+    @State private var scrubProgress: Double = 0 // 0...1 while scrubbing
+
     @State private var upNextTick: Int = 0
 
     private let upNextTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -104,11 +107,22 @@ struct NowPlayingFullscreenView: View {
     }
 
     private var overlay: some View {
+        VStack(spacing: 0) {
+            topBar
+
+            Spacer(minLength: 0)
+
+            transportControls
+        }
+        .padding(.top, 10)
+        .padding(.bottom, 18)
+        .padding(.horizontal, 16)
+        .ignoresSafeArea()
+    }
+
+    private var topBar: some View {
         HStack(spacing: 10) {
-            Button {
-                // Minimize
-                dismiss()
-            } label: {
+            Button { dismiss() } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
@@ -146,8 +160,122 @@ struct NowPlayingFullscreenView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
+    }
+
+    private var transportControls: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 26) {
+                Button { seekRelative(-10) } label: {
+                    Image(systemName: "gobackward.10")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 46, height: 46)
+                        .background(.black.opacity(0.40), in: Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                Button { nowPlaying.togglePlayPause() } label: {
+                    Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 64, height: 64)
+                        .background(.black.opacity(0.50), in: Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.14), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                Button { seekRelative(10) } label: {
+                    Image(systemName: "goforward.10")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 46, height: 46)
+                        .background(.black.opacity(0.40), in: Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+
+            VStack(spacing: 6) {
+                Slider(
+                    value: Binding(
+                        get: { isScrubbing ? scrubProgress : nowPlaying.progress },
+                        set: { newValue in
+                            scrubProgress = newValue
+                        }
+                    ),
+                    in: 0...1,
+                    onEditingChanged: { editing in
+                        isScrubbing = editing
+                        if !editing {
+                            seekToProgress(scrubProgress)
+                            scheduleOverlayAutoHide()
+                        } else {
+                            overlayHideTask?.cancel()
+                        }
+                    }
+                )
+
+                HStack {
+                    Text(formatTime(currentSeconds))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .monospacedDigit()
+
+                    Spacer()
+
+                    Text("-")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.55))
+
+                    Text(formatTime(max(0, durationSeconds - currentSeconds)))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .monospacedDigit()
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 10)
+            .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(0.10), lineWidth: 1))
+        }
+    }
+
+    private var currentSeconds: Double {
+        SessionStore.ticksToSeconds(nowPlaying.currentPositionTicks)
+    }
+
+    private var durationSeconds: Double {
+        if let seconds = nowPlaying.currentPlayer()?.currentItem?.duration.seconds,
+           seconds.isFinite, seconds > 0 {
+            return seconds
+        }
+        return 0
+    }
+
+    private func seekRelative(_ delta: Double) {
+        guard durationSeconds > 0 else { return }
+        let next = max(0, min(durationSeconds, currentSeconds + delta))
+        nowPlaying.seek(to: next)
+        scheduleOverlayAutoHide()
+    }
+
+    private func seekToProgress(_ progress: Double) {
+        guard durationSeconds > 0 else { return }
+        let clamped = max(0, min(1, progress))
+        nowPlaying.seek(to: durationSeconds * clamped)
+    }
+
+    private func formatTime(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        let total = Int(seconds.rounded(.down))
+        let s = total % 60
+        let m = (total / 60) % 60
+        let h = total / 3600
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%d:%02d", m, s)
     }
 
     // MARK: - Skip Intro
@@ -179,7 +307,7 @@ struct NowPlayingFullscreenView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 18)
-                .padding(.bottom, 86) // keep above native transport controls
+                .padding(.bottom, 140) // keep above custom transport controls
             }
         }
         .ignoresSafeArea()
@@ -275,7 +403,13 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let vc = AVPlayerViewController()
         vc.player = player
+        #if os(tvOS)
+        // Keep native controls on tvOS for best focus/remote ergonomics.
         vc.showsPlaybackControls = true
+        #else
+        // iOS/iPadOS: we provide a fully custom overlay UI.
+        vc.showsPlaybackControls = false
+        #endif
         #if os(iOS) || os(visionOS)
         vc.allowsPictureInPicturePlayback = true
         #endif

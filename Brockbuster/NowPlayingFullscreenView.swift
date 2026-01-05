@@ -19,6 +19,11 @@ struct NowPlayingFullscreenView: View {
     @State private var showingSubtitlesMenu: Bool = false
     @State private var showingQualityMenu: Bool = false
 
+    @State private var showingRemoteSubtitles: Bool = false
+    @State private var remoteSubtitleResults: [JellyfinClient.RemoteSubtitleInfo] = []
+    @State private var remoteSubtitlesLoading: Bool = false
+    @State private var remoteSubtitlesError: String? = nil
+
     private let upNextTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -175,40 +180,7 @@ struct NowPlayingFullscreenView: View {
                 }
             }
 
-            // Blockbuster-style header: prefer a Jellyfin Logo image if available.
-            VStack(spacing: 4) {
-                if let logoURL = nowPlaying.logoURL(maxWidth: 900) {
-                    BBCachedAsyncImage(url: logoURL) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFit()
-                        default:
-                            EmptyView()
-                        }
-                    }
-                    .frame(height: 44)
-                    .shadow(color: .black.opacity(0.55), radius: 10, x: 0, y: 6)
-                    .padding(.horizontal, 28)
-                } else {
-                    Text(nowPlaying.item?.title ?? "")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .shadow(color: .black.opacity(0.55), radius: 8, x: 0, y: 5)
-                        .padding(.horizontal, 28)
-                }
-
-                if let sub = nowPlaying.item?.subtitle, !sub.isEmpty {
-                    Text(sub)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(1)
-                        .padding(.horizontal, 28)
-                }
-            }
-            .padding(.vertical, 10)
+            ticketHeader
             .frame(maxWidth: .infinity)
             .background(
                 LinearGradient(
@@ -230,6 +202,119 @@ struct NowPlayingFullscreenView: View {
         .confirmationDialog("Quality", isPresented: $showingQualityMenu, titleVisibility: .visible) {
             qualityDialogButtons
         }
+        .sheet(isPresented: $showingRemoteSubtitles) {
+            RemoteSubtitlesSheet(
+                title: headerPrimaryTitle,
+                isLoading: remoteSubtitlesLoading,
+                errorMessage: remoteSubtitlesError,
+                results: remoteSubtitleResults,
+                onRefresh: { Task { await fetchRemoteSubtitles() } },
+                onDownload: { sub in Task { await downloadRemoteSubtitle(sub) } }
+            )
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private var headerPrimaryTitle: String {
+        guard let item = nowPlaying.item else { return "" }
+        if item.mediaKind == .episode {
+            return item.seriesTitle ?? item.title
+        }
+        return item.title
+    }
+
+    private var headerSecondaryTitle: String? {
+        guard let item = nowPlaying.item else { return nil }
+        if item.mediaKind == .episode {
+            var parts: [String] = []
+            if let s = item.seasonNumber { parts.append("S\(s)") }
+            if let e = item.episodeNumber { parts.append("E\(e)") }
+            let se = parts.joined(separator: " • ")
+            let epTitle = item.episodeTitle ?? item.title
+            if se.isEmpty { return epTitle }
+            return "\(se) • \(epTitle)"
+        }
+        return item.subtitle
+    }
+
+    private var ticketHeader: some View {
+        HStack(spacing: 12) {
+            // Poster / season art (if provided)
+            if let poster = nowPlaying.item?.posterURL {
+                BBCachedAsyncImage(url: poster) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        Color.white.opacity(0.06)
+                    }
+                }
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(0.12), lineWidth: 1))
+                .shadow(color: .black.opacity(0.55), radius: 10, x: 0, y: 7)
+            } else if let logoURL = nowPlaying.logoURL(maxWidth: 600) {
+                BBCachedAsyncImage(url: logoURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFit()
+                    default:
+                        EmptyView()
+                    }
+                }
+                .frame(width: 56, height: 56)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    // Prefer a Jellyfin Logo image if available.
+                    if let logoURL = nowPlaying.logoURL(maxWidth: 900) {
+                        BBCachedAsyncImage(url: logoURL) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFit()
+                            default:
+                                Text(headerPrimaryTitle)
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .frame(height: 26)
+                        .shadow(color: .black.opacity(0.55), radius: 8, x: 0, y: 5)
+                    } else {
+                        Text(headerPrimaryTitle)
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .shadow(color: .black.opacity(0.55), radius: 8, x: 0, y: 5)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                if let secondary = headerSecondaryTitle, !secondary.isEmpty {
+                    Text(secondary)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.88))
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .overlay(
+            // Ticket notch cues
+            HStack {
+                Circle().fill(Color.black.opacity(0.22)).frame(width: 10, height: 10)
+                Spacer()
+                Circle().fill(Color.black.opacity(0.22)).frame(width: 10, height: 10)
+            }
+            .padding(.horizontal, 10)
+        )
     }
 
     private var transportControls: some View {
@@ -325,7 +410,11 @@ struct NowPlayingFullscreenView: View {
 
     private func seekRelative(_ delta: Double) {
         guard durationSeconds > 0 else { return }
-        let next = max(0, min(durationSeconds, currentSeconds + delta))
+        // Use the live AVPlayer clock to avoid stale tick updates causing
+        // smaller-than-expected skips.
+        let base = nowPlaying.currentPlayer()?.currentTime().seconds
+        let current = (base?.isFinite == true) ? (base ?? currentSeconds) : currentSeconds
+        let next = max(0, min(durationSeconds, current + delta))
         nowPlaying.seek(to: next)
         scheduleOverlayAutoHide()
     }
@@ -370,7 +459,12 @@ struct NowPlayingFullscreenView: View {
         }
 
         if subtitleOptions.isEmpty {
-            Button("No subtitles available") {}
+            Button("Find Subtitles…") {
+                showingRemoteSubtitles = true
+                Task { await fetchRemoteSubtitles() }
+            }
+
+            Button("No subtitles currently attached") {}
                 .disabled(true)
         } else {
             ForEach(Array(subtitleOptions.enumerated()), id: \.offset) { _, opt in
@@ -523,6 +617,40 @@ struct NowPlayingFullscreenView: View {
                 overlayVisible = false
             }
         }
+    }
+    // MARK: - Remote subtitle helpers
+
+    @MainActor
+    private func fetchRemoteSubtitles() async {
+        remoteSubtitlesLoading = true
+        remoteSubtitlesError = nil
+        remoteSubtitleResults = []
+        do {
+            let res = try await nowPlaying.fetchRemoteSubtitles()
+            remoteSubtitleResults = res
+            if res.isEmpty {
+                remoteSubtitlesError = "No remote subtitles found."
+            }
+        } catch {
+            remoteSubtitlesError = "Failed to search subtitles: \(error.localizedDescription)"
+        }
+        remoteSubtitlesLoading = false
+    }
+
+    @MainActor
+    private func downloadRemoteSubtitle(_ remote: JellyfinClient.RemoteSubtitleInfo) async {
+        remoteSubtitlesLoading = true
+        remoteSubtitlesError = nil
+        do {
+            try await nowPlaying.downloadRemoteSubtitle(remote)
+            remoteSubtitlesError = "Downloaded. Reloading tracks…"
+            // Give the server a brief moment to finalize the attachment.
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            showingRemoteSubtitles = false
+        } catch {
+            remoteSubtitlesError = "Failed to download subtitle: \(error.localizedDescription)"
+        }
+        remoteSubtitlesLoading = false
     }
 }
 

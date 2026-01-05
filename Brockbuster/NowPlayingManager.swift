@@ -144,6 +144,63 @@ final class NowPlayingManager: ObservableObject {
 
     private weak var sessionRef: SessionStore?
 
+    // MARK: - Remote Subtitles
+
+    @MainActor
+    func fetchRemoteSubtitles() async throws -> [JellyfinClient.RemoteSubtitleInfo] {
+        guard let session = sessionRef, let current = item else { return [] }
+        return try await session.searchRemoteSubtitles(itemId: current.id)
+    }
+
+    @MainActor
+    func downloadRemoteSubtitle(_ remote: JellyfinClient.RemoteSubtitleInfo) async throws {
+        guard let session = sessionRef, let current = item else { return }
+        try await session.downloadRemoteSubtitle(itemId: current.id, subtitleId: remote.id)
+        // After the server attaches the new subtitle track, rebuild the player so
+        // AVFoundation sees the new legible media options.
+        refreshAtCurrentPosition()
+    }
+
+    /// Rebuild the current playback stream (same item / quality) and resume at the
+    /// current position. This is used after operations like remote subtitle downloads.
+    @MainActor
+    func refreshAtCurrentPosition() {
+        guard let current = item else { return }
+        guard let session = sessionRef else { return }
+        let resumeTicks = currentPositionTicks
+        isPreparingPlayback = true
+
+        Task {
+            do {
+                let maxBitrate = self.quality.maxStreamingBitrate
+                let context = try await session.playbackContext(for: current.id, maxStreamingBitrate: maxBitrate)
+                await MainActor.run {
+                    if let existing = self.item, existing.id == current.id {
+                        self.item = NowPlayingItem(
+                            id: existing.id,
+                            title: existing.title,
+                            subtitle: existing.subtitle,
+                            posterURL: existing.posterURL,
+                            playbackContext: context,
+                            startPositionTicks: existing.startPositionTicks,
+                            seriesTitle: existing.seriesTitle,
+                            seasonNumber: existing.seasonNumber,
+                            episodeNumber: existing.episodeNumber,
+                            episodeTitle: existing.episodeTitle,
+                            mediaKind: existing.mediaKind,
+                            episodeContext: existing.episodeContext
+                        )
+                    }
+                    self.teardownPlayer()
+                    self.setupPlayer(url: context.url, startPositionTicks: resumeTicks)
+                    self.isPreparingPlayback = false
+                }
+            } catch {
+                await MainActor.run { self.isPreparingPlayback = false }
+            }
+        }
+    }
+
     // MARK: - System Now Playing (Lock Screen / Control Center)
     //
     // NOTE:

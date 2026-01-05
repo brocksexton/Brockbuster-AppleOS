@@ -555,6 +555,31 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    // MARK: - Remote Subtitles
+
+    func searchRemoteSubtitles(itemId: String) async throws -> [JellyfinClient.RemoteSubtitleInfo] {
+        guard let userId = currentUser?.id else { throw JellyfinClient.NetworkError.invalidResponse }
+        return try await withCheckedThrowingContinuation { continuation in
+            client.searchRemoteSubtitles(itemId: itemId, userId: userId) { result in
+                switch result {
+                case .success(let subs): continuation.resume(returning: subs)
+                case .failure(let err): continuation.resume(throwing: err)
+                }
+            }
+        }
+    }
+
+    func downloadRemoteSubtitle(itemId: String, subtitleId: String) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            client.downloadRemoteSubtitle(itemId: itemId, subtitleId: subtitleId) { result in
+                switch result {
+                case .success: continuation.resume(returning: ())
+                case .failure(let err): continuation.resume(throwing: err)
+                }
+            }
+        }
+    }
+
     /// Construct a stream URL for a given item.  This first fetches playback info to obtain
     /// the media source ID and play session ID, then uses the client to build the final URL.
     /// Throws if the server responds with an error or if a valid stream URL cannot be built.
@@ -572,6 +597,21 @@ final class SessionStore: ObservableObject {
     /// (or transcode) depending on server capabilities and the source file.
     func playbackContext(for itemId: String, maxStreamingBitrate: Int?) async throws -> PlaybackContext {
         let playbackInfo = try await fetchPlaybackInfo(itemId: itemId)
+
+        // If the item is very likely to be Apple-compatible (container + codecs),
+        // prefer a single-file Direct Play stream whenever we are not explicitly
+        // asking for a bitrate cap. This materially reduces server load compared
+        // to forcing HLS/transcoding.
+        //
+        // We are conservative on constrained/expensive networks.
+        if maxStreamingBitrate == nil,
+           let direct = preferredDirectPlayURLIfSuitable(itemId: itemId, playbackInfo: playbackInfo) {
+            return PlaybackContext(
+                url: direct,
+                mediaSourceId: playbackInfo.mediaSources.first?.id,
+                playSessionId: playbackInfo.playSessionId
+            )
+        }
 
         // If a transcodingUrl is provided use it directly, appending the api_key.
         if let source = playbackInfo.mediaSources.first,
@@ -620,6 +660,55 @@ final class SessionStore: ObservableObject {
         }
 
         throw JellyfinClient.NetworkError.invalidResponse
+    }
+
+    /// Returns a Direct Play URL when the file is Apple-compatible and the
+    /// current network path is not obviously constrained.
+    private func preferredDirectPlayURLIfSuitable(itemId: String, playbackInfo: JellyfinClient.PlaybackInfo) -> URL? {
+        guard let source = playbackInfo.mediaSources.first else { return nil }
+
+        // Basic codec/container compatibility.
+        guard isAppleCompatible(mediaSource: source) else { return nil }
+
+        // Network gate: avoid forcing a large direct stream on constrained/expensive
+        // paths unless the bitrate is low.
+        let network = NetworkMonitor.shared
+        if network.isConstrained {
+            return nil
+        }
+
+        if network.isExpensive {
+            // On cellular: only direct play when the source bitrate is modest.
+            // If bitrate metadata is missing, allow direct play (best effort).
+            if let b = source.bitrate, b > 8_000_000 { // ~8 Mbps
+                return nil
+            }
+        }
+
+        return client.makeStreamURL(
+            itemId: itemId,
+            mediaSourceId: source.id,
+            playSessionId: playbackInfo.playSessionId,
+            userId: currentUser?.id
+        )
+    }
+
+    /// Conservative Apple compatibility check for Direct Play.
+    private func isAppleCompatible(mediaSource: JellyfinClient.PlaybackMediaSource) -> Bool {
+        let container = mediaSource.container?.lowercased()
+        let streams = mediaSource.mediaStreams ?? []
+        let videoCodec = streams.first(where: { $0.type?.lowercased() == "video" })?.codec?.lowercased()
+        let audioCodec = streams.first(where: { $0.type?.lowercased() == "audio" })?.codec?.lowercased()
+
+        let appleContainers: Set<String> = ["mp4", "m4v", "mov"]
+        let appleVideo: Set<String> = ["h264", "avc", "hevc", "h265"]
+        let appleAudio: Set<String> = ["aac", "alac", "mp3", "ac3", "eac3"]
+
+        // If metadata is missing, be permissive (best effort direct play).
+        if let c = container, !appleContainers.contains(c) { return false }
+        if let v = videoCodec, !appleVideo.contains(v) { return false }
+        if let a = audioCodec, !appleAudio.contains(a) { return false }
+        return true
     }
 
     /// Convenience helper that returns only the playable URL.

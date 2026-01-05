@@ -370,8 +370,8 @@
 			projectDirPath = "";
 			projectReferences = (
 				{
-					ProductGroup = C11A40732F0B4E4700C0DAA1 /* Products */;
-					ProjectRef = C11A40702F0B4E4700C0DAA1 /* Brockbuster.xcodeproj */;
+					ProductGroup = C11A30132F08CEAE00C0DAA1 /* Products */;
+					ProjectRef = C11A30102F08CEAE00C0DAA1 /* Brockbuster.xcodeproj */;
 				},
 				{
 					ProductGroup = C11A360F2F0B004700C0DAA1 /* Products */;
@@ -382,8 +382,8 @@
 					ProjectRef = C16E0E372F07562F0083BF0F /* Brockbuster.xcodeproj */;
 				},
 				{
-					ProductGroup = C11A30132F08CEAE00C0DAA1 /* Products */;
-					ProjectRef = C11A30102F08CEAE00C0DAA1 /* Brockbuster.xcodeproj */;
+					ProductGroup = C11A40732F0B4E4700C0DAA1 /* Products */;
+					ProjectRef = C11A40702F0B4E4700C0DAA1 /* Brockbuster.xcodeproj */;
 				},
 			);
 			projectRoot = "";

@@ -1099,6 +1099,78 @@ func fetchMediaSegments(itemId: String, completion: @escaping (Result<[MediaSegm
         }
     }
 
+    // MARK: - Remote Subtitles (OpenSubtitles / provider plugins)
+
+    struct RemoteSubtitleInfo: Decodable, Identifiable {
+        let id: String
+        let name: String?
+        let language: String?
+        let providerName: String?
+        let format: String?
+        let isHearingImpaired: Bool?
+        let communityRating: Float?
+
+        enum CodingKeys: String, CodingKey {
+            case id = "Id"
+            case name = "Name"
+            case language = "Language"
+            case providerName = "ProviderName"
+            case format = "Format"
+            case isHearingImpaired = "IsHearingImpaired"
+            case communityRating = "CommunityRating"
+        }
+    }
+
+    /// Search remote subtitle providers for a media item.
+    func searchRemoteSubtitles(itemId: String, userId: String?, completion: @escaping (Result<[RemoteSubtitleInfo], Error>) -> Void) {
+        var url = baseURL.appendingPathComponent("Items/\(itemId)/RemoteSearch/Subtitles")
+        if let userId, var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            comps.queryItems = [URLQueryItem(name: "UserId", value: userId)]
+            url = comps.url ?? url
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue(buildAuthorizationHeader(withToken: accessToken), forHTTPHeaderField: "X-Emby-Authorization")
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error {
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
+            guard let data else {
+                DispatchQueue.main.async { completion(.failure(NetworkError.invalidResponse)) }
+                return
+            }
+            do {
+                let results = try JSONDecoder().decode([RemoteSubtitleInfo].self, from: data)
+                DispatchQueue.main.async { completion(.success(results)) }
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+            }
+        }.resume()
+    }
+
+    /// Request the server to download/install a remote subtitle.
+    ///
+    /// This typically triggers the OpenSubtitles (or other provider) plugin to fetch
+    /// and attach the subtitle to the item.
+    func downloadRemoteSubtitle(itemId: String, subtitleId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        let url = baseURL.appendingPathComponent("Items/\(itemId)/RemoteSearch/Subtitles/\(subtitleId)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(buildAuthorizationHeader(withToken: accessToken), forHTTPHeaderField: "X-Emby-Authorization")
+
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            if let error {
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
+            // Jellyfin often returns 204 for success.
+            DispatchQueue.main.async { completion(.success(())) }
+        }.resume()
+    }
+
 
     /// Fetch playback info for an item.  This calls `/Items/{itemId}/PlaybackInfo`
     /// with an optional userId.  The result includes media sources and a play session id.

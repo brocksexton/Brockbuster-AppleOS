@@ -24,6 +24,9 @@ struct ItemDetailView: View {
 
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
+
+    @State private var showDownloadChoice: Bool = false
+    @State private var pendingDownloadReport: OfflineCompatibilityReport? = nil
     @State private var playbackSubtitle: String = ""
 
     @State private var isTogglingFavorite: Bool = false
@@ -53,6 +56,22 @@ struct ItemDetailView: View {
         #if !os(macOS)
         .bbNavigationTitleInline()
         #endif
+
+        .confirmationDialog("Download Options", isPresented: $showDownloadChoice, titleVisibility: .visible) {
+            Button("Download Direct File (Faster)") {
+                downloads.enqueue(item: item, sessionStore: session, kind: .direct, report: pendingDownloadReport, entryPoint: "item_detail")
+            }
+            Button("Download Transcoded Copy (More Compatible)") {
+                downloads.enqueue(item: item, sessionStore: session, kind: .transcoded, report: pendingDownloadReport, entryPoint: "item_detail")
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("""
+If this file uses a codec or container your device may not support, downloading a transcoded copy can improve playback reliability.
+
+Transcoded downloads usually take longer because the server must convert the file before it can be downloaded.
+""")
+        }
         .task { await loadAll() }
 
     }
@@ -441,7 +460,17 @@ struct ItemDetailView: View {
 
                     } else {
                         Button {
-                            downloads.enqueue(item: item, sessionStore: session, entryPoint: "item_detail")
+                            Task {
+                                let report = try? await session.offlineCompatibilityReport(for: item.id)
+                                await MainActor.run {
+                                    pendingDownloadReport = report
+                                    if report?.requiresTranscode == true {
+                                        showDownloadChoice = true
+                                    } else {
+                                        downloads.enqueue(item: item, sessionStore: session, kind: .direct, report: report, entryPoint: "item_detail")
+                                    }
+                                }
+                            }
                         } label: {
                         HStack(spacing: 10) {
                             Image(systemName: downloadButtonIcon(for: record))
@@ -570,13 +599,17 @@ struct ItemDetailView: View {
 
     private func downloadButtonSubtitle(for record: DownloadRecord?) -> String? {
         guard let record else { return "Save offline on this device" }
+
+        let kind = record.downloadKind ?? ((record.usedCompatibility ?? false) ? .transcoded : .direct)
+        let kindText = (kind == .transcoded) ? "Transcoded copy" : "Direct file"
+
         switch record.state {
-        case .downloading: return "In progress"
-        case .paused: return "Paused"
-        case .queued: return "Starting…"
-        case .completed: return "Available offline"
+        case .downloading: return "In progress • \(kindText)"
+        case .paused: return "Paused • \(kindText)"
+        case .queued: return "Starting… • \(kindText)"
+        case .completed: return "Available offline • \(kindText)"
         case .failed:
-            return record.errorDescription ?? "Tap Retry to try again"
+            return (record.errorDescription ?? "Tap Retry to try again") + " • \(kindText)"
         }
     }
 

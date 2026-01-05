@@ -11,6 +11,13 @@ enum DownloadState: String, Codable {
     case failed
 }
 
+/// Indicates whether a download is the original file or a server-side compatibility transcode.
+enum DownloadKind: String, Codable {
+    case direct
+    case transcoded
+}
+
+
 /// A persisted record for a single downloaded item.
 struct DownloadRecord: Identifiable, Codable, Equatable {
     let id: UUID
@@ -40,6 +47,20 @@ struct DownloadRecord: Identifiable, Codable, Equatable {
     var bytesWritten: Int64?
     var bytesExpected: Int64?
 
+    /// Whether the most recent download attempt requested a server-side
+    /// compatibility remux/transcode (MP4/H.264/AAC).
+    ///
+    /// Optional so older persisted records remain forward-compatible.
+    var usedCompatibility: Bool?
+
+    /// Explicit flag for UI/analytics. Optional for forward-compat with older records.
+    var downloadKind: DownloadKind?
+
+    /// Best-effort source metadata captured at enqueue time.
+    var sourceContainer: String?
+    var sourceVideoCodec: String?
+    var sourceAudioCodec: String?
+
     var localRelativePath: String?
     var createdAt: Date
     var updatedAt: Date
@@ -53,8 +74,16 @@ struct DownloadRecord: Identifiable, Codable, Equatable {
 final class DownloadManager: NSObject, ObservableObject {
     @Published private(set) var records: [DownloadRecord] = []
 
+    /// SessionStore is required to construct authenticated download URLs.
+    /// Stored weakly to avoid retain cycles (DownloadManager is held by the app environment).
+    ///
+    /// Note: when the app is relaunched into the background by a URLSession
+    /// background event, this can be nil until the user signs in again.
+    private weak var sessionStore: SessionStore?
+
     private var session: URLSession!
     private var taskToRecord: [Int: UUID] = [:]
+    private var progressObservers: [UUID: NSKeyValueObservation] = [:]
 
     private let persistenceURL: URL
     private let downloadsRootURL: URL
@@ -146,6 +175,13 @@ final class DownloadManager: NSObject, ObservableObject {
 
     /// Enqueue a download for a given Jellyfin item.
     func enqueue(item: JellyfinClient.LibraryItem, sessionStore: SessionStore, entryPoint: String = "unknown") {
+        enqueue(item: item, sessionStore: sessionStore, kind: .direct, report: nil, entryPoint: entryPoint)
+    }
+
+    func enqueue(item: JellyfinClient.LibraryItem, sessionStore: SessionStore, kind: DownloadKind, report: OfflineCompatibilityReport?, entryPoint: String = "unknown") {
+        // Keep a weak reference so delegate callbacks can optionally trigger a
+        // compatibility retry when the downloaded file is not locally playable.
+        self.sessionStore = sessionStore
         guard let serverKey = sessionStore.serverURL.host ?? sessionStore.serverURL.absoluteString as String? else { return }
         let userId = sessionStore.currentUser?.id
 
@@ -175,6 +211,11 @@ final class DownloadManager: NSObject, ObservableObject {
             errorDescription: nil,
             bytesWritten: nil,
             bytesExpected: nil,
+            usedCompatibility: (kind == .transcoded),
+            downloadKind: kind,
+            sourceContainer: report?.container,
+            sourceVideoCodec: report?.videoCodec,
+            sourceAudioCodec: report?.audioCodec,
             // Pre-compute the final destination relative path up-front.
             // This makes background delegate file moves race-free because the
             // delegate can parse the path from the taskDescription without needing
@@ -198,7 +239,7 @@ final class DownloadManager: NSObject, ObservableObject {
         }
 
         Task {
-            await startDownload(recordId: record.id, itemId: item.id, sessionStore: sessionStore)
+            await startDownload(recordId: record.id, itemId: item.id, sessionStore: sessionStore, forceCompatibility: (kind == .transcoded))
         }
     }
 
@@ -253,9 +294,16 @@ final class DownloadManager: NSObject, ObservableObject {
             rec.updatedAt = Date()
         }
 
+        // Heuristic: if the last attempt was a direct download and the failure
+        // indicates local incompatibility, escalate to a compatible MP4 download.
+        let lastUsedCompatibility = record.usedCompatibility ?? false
+        let looksIncompatible = (record.errorDescription?.lowercased().contains("not playable") ?? false)
+            || (record.errorDescription?.lowercased().contains("codec") ?? false)
+        let forceCompatibility = lastUsedCompatibility || looksIncompatible
+
         Task { [weak self] in
             guard let self else { return }
-            await self.startDownload(recordId: record.id, itemId: record.itemId, sessionStore: sessionStore)
+            await self.startDownload(recordId: record.id, itemId: record.itemId, sessionStore: sessionStore, forceCompatibility: forceCompatibility)
         }
     }
 
@@ -291,15 +339,38 @@ final class DownloadManager: NSObject, ObservableObject {
         }
     }
 
-    private func startDownload(recordId: UUID, itemId: String, sessionStore: SessionStore) async {
+    private func startDownload(recordId: UUID, itemId: String, sessionStore: SessionStore, forceCompatibility: Bool) async {
         do {
-            let url = try await sessionStore.downloadURL(for: itemId)
+            // Choose direct vs compatible download. SessionStore will only force a
+            // compatibility remux/transcode when it *knows* the container/codec is
+            // incompatible or when explicitly requested.
+            let url = try await sessionStore.downloadURL(for: itemId, forceCompatibility: forceCompatibility)
 
             var request = URLRequest(url: url)
             request.timeoutInterval = 60
             request.setValue("Brockbuster", forHTTPHeaderField: "User-Agent")
 
             let task = session.downloadTask(with: request)
+
+            // Observe progress via KVO. This is significantly more reliable than
+            // didWriteData for some background-session/server combinations.
+            progressObservers[recordId]?.invalidate()
+            progressObservers[recordId] = task.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] prog, _ in
+                guard let self else { return }
+                let fraction = prog.fractionCompleted
+                let written = prog.completedUnitCount
+                let expected = (prog.totalUnitCount > 0) ? prog.totalUnitCount : -1
+
+                Task { @MainActor in
+                    self.update(recordId: recordId) { rec in
+                        if rec.state == .queued { rec.state = .downloading }
+                        if fraction.isFinite { rec.progress = max(0.0, min(1.0, fraction)) }
+                        if written > 0 { rec.bytesWritten = written }
+                        if expected > 0 { rec.bytesExpected = expected }
+                        rec.updatedAt = Date()
+                    }
+                }
+            }
 
             // Encode both the record id and the pre-computed relative destination
             // path so URLSession delegate callbacks can synchronously move the file
@@ -314,6 +385,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
             update(recordId: recordId) { rec in
                 rec.state = .downloading
+                rec.usedCompatibility = forceCompatibility
                 rec.updatedAt = Date()
             }
             task.resume()
@@ -441,13 +513,20 @@ extension DownloadManager: URLSessionDownloadDelegate {
         guard let desc = downloadTask.taskDescription else { return }
         let uuidPart = desc.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: true).first
         guard let uuidPart, let recordId = UUID(uuidString: String(uuidPart)) else { return }
-        let progress = totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0
+        // totalBytesExpectedToWrite is often -1/unknown for background sessions until
+        // the server provides a Content-Length. Fall back to the task's expected byte
+        // count when available.
+        let expected = (totalBytesExpectedToWrite > 0)
+            ? totalBytesExpectedToWrite
+            : downloadTask.countOfBytesExpectedToReceive
+
+        let progress = expected > 0 ? Double(totalBytesWritten) / Double(expected) : 0
         Task { @MainActor in
             self.update(recordId: recordId) { rec in
                 rec.state = .downloading
                 rec.progress = progress
                 rec.bytesWritten = totalBytesWritten
-                rec.bytesExpected = totalBytesExpectedToWrite
+                rec.bytesExpected = expected > 0 ? expected : nil
                 rec.updatedAt = Date()
             }
         }
@@ -501,11 +580,39 @@ extension DownloadManager: URLSessionDownloadDelegate {
                 // Best effort: remove the unusable file.
                 try? fm.removeItem(at: dest)
                 Task { @MainActor in
-                    self.update(recordId: recordId) { rec in
-                        rec.state = .failed
-                        rec.progress = 0
-                        rec.errorDescription = "Downloaded file is not playable on this device. Try re-downloading (compatible) or streaming instead."
-                        rec.updatedAt = Date()
+                    // If the previous attempt was a direct download and we still have a
+                    // session, automatically retry as a compatible MP4 download.
+                    guard let existing = self.records.first(where: { $0.id == recordId }) else {
+                        self.update(recordId: recordId) { rec in
+                            rec.state = .failed
+                            rec.progress = 0
+                            rec.errorDescription = "Downloaded file is not playable on this device."
+                            rec.updatedAt = Date()
+                        }
+                        return
+                    }
+
+                    let alreadyCompat = existing.usedCompatibility ?? false
+                    if !alreadyCompat, let ss = self.sessionStore {
+                        self.update(recordId: recordId) { rec in
+                            rec.state = .downloading
+                            rec.progress = 0
+                            rec.usedCompatibility = true
+                            rec.downloadKind = .transcoded
+                            rec.errorDescription = "File isn't locally playable; requesting a compatible offline copy..."
+                            rec.updatedAt = Date()
+                        }
+                        Task { [weak self] in
+                            guard let self else { return }
+                            await self.startDownload(recordId: recordId, itemId: existing.itemId, sessionStore: ss, forceCompatibility: true)
+                        }
+                    } else {
+                        self.update(recordId: recordId) { rec in
+                            rec.state = .failed
+                            rec.progress = 0
+                            rec.errorDescription = "Downloaded file is not playable on this device. Tap Retry to download a compatible copy."
+                            rec.updatedAt = Date()
+                        }
                     }
                 }
                 return

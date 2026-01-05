@@ -415,6 +415,7 @@ private struct DownloadRow: View {
 
                         HStack(spacing: 10) {
                             statusPill
+                            kindPill
 
                             if isManaging, let onDelete {
                             Button(role: .destructive) {
@@ -439,8 +440,15 @@ private struct DownloadRow: View {
                 }
 
                 if record.state == .downloading || record.state == .queued {
-                    ProgressView(value: record.progress)
-                        .tint(BrockbusterTheme.brockGold)
+                    if let expected = record.bytesExpected, expected > 0 {
+                        ProgressView(value: record.progress)
+                            .tint(BrockbusterTheme.brockGold)
+                    } else {
+                        // If the server does not provide an expected size, fall back
+                        // to an indeterminate progress indicator.
+                        ProgressView()
+                            .tint(BrockbusterTheme.brockGold)
+                    }
                 }
 
                 if record.state == .failed, let err = record.errorDescription {
@@ -465,6 +473,10 @@ private struct DownloadRow: View {
 
     private var metaLine: String? {
         var parts: [String] = []
+        // Source format flags (best-effort)
+        if let c = record.sourceContainer, !c.isEmpty { parts.append(c.uppercased()) }
+        if let v = record.sourceVideoCodec, !v.isEmpty { parts.append(v.uppercased()) }
+        if let a = record.sourceAudioCodec, !a.isEmpty { parts.append(a.uppercased()) }
 
         if let expected = record.bytesExpected, expected > 0 {
             let f = ByteCountFormatter()
@@ -487,6 +499,23 @@ private struct DownloadRow: View {
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 
+    private var kindPill: some View {
+        let kind = record.downloadKind ?? ((record.usedCompatibility ?? false) ? .transcoded : .direct)
+        let text = (kind == .transcoded) ? "Transcoded" : "Direct"
+        return Text(text)
+            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .foregroundColor(BrockbusterTheme.brockLight)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(.ultraThinMaterial))
+            .overlay(
+                Capsule().stroke(
+                    (kind == .transcoded ? BrockbusterTheme.brockGold : BrockbusterTheme.brockBlue).opacity(0.55),
+                    lineWidth: 1
+                )
+            )
+    }
+
     private var statusPill: some View {
         Text(statusText)
             .font(.system(size: 11, weight: .bold, design: .rounded))
@@ -503,7 +532,10 @@ private struct DownloadRow: View {
         case .queued:
             return "Queued"
         case .downloading:
-            return "\(Int(record.progress * 100))%"
+            if let expected = record.bytesExpected, expected > 0 {
+                return "\(Int(record.progress * 100))%"
+            }
+            return "Downloading"
         case .paused:
             return "Paused"
         case .completed:

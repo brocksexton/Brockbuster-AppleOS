@@ -1,6 +1,15 @@
 import Foundation
 import SwiftUI
 
+/// Captures codec/container information used to decide whether an offline download
+/// should be requested as a direct file or a server-side compatibility transcode.
+struct OfflineCompatibilityReport {
+    let container: String?
+    let videoCodec: String?
+    let audioCodec: String?
+    let requiresTranscode: Bool
+}
+
 /// Shared application state managing the connection to the Jellyfin server,
 /// authentication token and current user.  Views can observe this object to
 /// automatically react to changes (e.g. showing login when the user logs out).
@@ -613,7 +622,42 @@ final class SessionStore: ObservableObject {
     ///
     /// This intentionally prefers the Videos stream endpoint (static=true) rather than
     /// HLS playlists so the client receives a single file payload.
-    func downloadURL(for itemId: String, forceCompatibility: Bool = false) async throws -> URL {
+    
+/// Determines whether an item likely requires a compatibility download (MP4/H.264/AAC)
+/// for offline playback on Apple platforms.
+///
+/// The result is conservative: it only returns `requiresTranscode = true` when the app
+/// *knows* a container/codec is not typically supported. If codec metadata is missing,
+/// the function will return `requiresTranscode = false` so the app can attempt a direct
+/// download first (and optionally fall back to transcoding if playback fails).
+func offlineCompatibilityReport(for itemId: String) async throws -> OfflineCompatibilityReport {
+    let playbackInfo = try await fetchPlaybackInfo(itemId: itemId)
+    let mediaSource = playbackInfo.mediaSources.first
+
+    let container = mediaSource?.container?.lowercased()
+
+    let streams = mediaSource?.mediaStreams ?? []
+    let videoCodec = streams.first(where: { $0.type?.lowercased() == "video" })?.codec?.lowercased()
+    let audioCodec = streams.first(where: { $0.type?.lowercased() == "audio" })?.codec?.lowercased()
+
+    let appleContainers: Set<String> = ["mp4", "m4v", "mov"]
+    let appleVideo: Set<String> = ["h264", "avc", "hevc", "h265"]
+    let appleAudio: Set<String> = ["aac", "alac", "mp3", "ac3", "eac3"]
+
+    var requires = false
+    if let c = container, !appleContainers.contains(c) { requires = true }
+    if let v = videoCodec, !appleVideo.contains(v) { requires = true }
+    if let a = audioCodec, !appleAudio.contains(a) { requires = true }
+
+    return OfflineCompatibilityReport(
+        container: container,
+        videoCodec: videoCodec,
+        audioCodec: audioCodec,
+        requiresTranscode: requires
+    )
+}
+
+func downloadURL(for itemId: String, forceCompatibility: Bool = false) async throws -> URL {
         let playbackInfo = try await fetchPlaybackInfo(itemId: itemId)
         let mediaSourceId = playbackInfo.mediaSources.first?.id
         let playSessionId = playbackInfo.playSessionId
@@ -645,12 +689,21 @@ final class SessionStore: ObservableObject {
         let appleVideo: Set<String> = ["h264", "avc", "hevc", "h265"]
         let appleAudio: Set<String> = ["aac", "alac", "mp3", "ac3", "eac3"]
 
+        // Decide whether we must force a compatible offline download.
+        //
+        // Important: some Jellyfin servers (and some item types) do not return full
+        // MediaStreams codec info. In those cases, *do not* pessimistically force a
+        // compatibility transcode, because it can cause needless server transcoding
+        // for content that is already Apple-playable.
+        //
+        // Instead:
+        //  - force compatibility only when we *know* the container/codec is incompatible
+        //  - otherwise attempt a direct download and rely on post-download validation
+        //    (AVFoundation) to detect incompatibility and let the user retry as compatible.
         let requiresCompatibilityTranscode: Bool = {
             if let c = container, !appleContainers.contains(c) { return true }
             if let v = videoCodec, !appleVideo.contains(v) { return true }
             if let a = audioCodec, !appleAudio.contains(a) { return true }
-            // If we can’t determine codecs (some servers omit MediaStreams), prefer compatibility.
-            if videoCodec == nil || audioCodec == nil { return true }
             return false
         }()
 

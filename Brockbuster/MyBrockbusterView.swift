@@ -466,10 +466,41 @@ private struct PosterCard: View {
         return (w: 140, h: 200)
     }
 
+    private var isEpisode: Bool {
+        (item.type ?? "").lowercased() == "episode"
+    }
+
+    private var displaySeriesTitle: String {
+        item.seriesName?.isEmpty == false ? (item.seriesName ?? item.name) : item.name
+    }
+
+    private var episodeDescriptor: String? {
+        guard isEpisode else { return nil }
+        var parts: [String] = []
+        if let s = item.parentIndexNumber, s > 0 { parts.append("Season \(s)") }
+        if let e = item.indexNumber, e > 0 { parts.append("Episode \(e)") }
+        let joined = parts.joined(separator: " • ")
+        return joined.isEmpty ? nil : joined
+    }
+
+    private var cardImageURL: URL? {
+        guard isEpisode else { return session.itemImageURL(for: item, maxWidth: 420) }
+
+        if let seasonId = item.seasonId, !seasonId.isEmpty {
+            return session.itemImageURL(itemId: seasonId, kind: "Primary", maxWidth: 420)
+                ?? session.itemImageURL(for: item, maxWidth: 420)
+        }
+        if let seriesId = item.seriesId, !seriesId.isEmpty {
+            return session.itemImageURL(itemId: seriesId, kind: "Primary", maxWidth: 420)
+                ?? session.itemImageURL(for: item, maxWidth: 420)
+        }
+        return session.itemImageURL(for: item, maxWidth: 420)
+    }
+
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Group {
-                if let url = session.itemImageURL(for: item, maxWidth: 420) {
+                if let url = cardImageURL {
                     BBCachedAsyncImage(url: url) { phase in
                         switch phase {
                         case .empty:
@@ -499,11 +530,32 @@ private struct PosterCard: View {
                 endPoint: .bottom
             )
 
-            Text(item.name)
-                .font(.caption.weight(.semibold))
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .padding(10)
+            VStack(alignment: .leading, spacing: 2) {
+                if isEpisode {
+                    Text(displaySeriesTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+
+                    if let descriptor = episodeDescriptor {
+                        Text(descriptor)
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.90))
+                            .lineLimit(1)
+                    }
+
+                    Text(item.name)
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.88))
+                        .lineLimit(2)
+                } else {
+                    Text(item.name)
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                }
+            }
+            .padding(10)
         }
         .frame(width: cardSize.w, height: cardSize.h)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))

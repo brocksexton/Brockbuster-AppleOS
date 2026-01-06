@@ -62,6 +62,8 @@ final class NowPlayingManager: ObservableObject {
         let episodeId: String
         let seriesId: String?
         let seriesTitle: String
+        let seasonNumber: Int?
+        let episodeNumber: Int?
         let episodeTitle: String
         let subtitle: String
         let posterURL: URL?
@@ -590,12 +592,16 @@ final class NowPlayingManager: ObservableObject {
             await MainActor.run {
                 self.play(
                     itemId: next.episodeId,
-                    title: next.seriesTitle,
+                    title: next.episodeTitle,
                     subtitle: next.subtitle,
                     posterURL: effectivePoster,
                     startPositionTicks: next.startPositionTicks,
                     mediaKind: .episode,
                     seriesIdForEpisode: next.seriesId,
+                    seriesTitle: next.seriesTitle,
+                    seasonNumber: next.seasonNumber,
+                    episodeNumber: next.episodeNumber,
+                    episodeTitle: next.episodeTitle,
                     session: session
                 )
             }
@@ -759,6 +765,8 @@ final class NowPlayingManager: ObservableObject {
                     episodeId: nextUp.id,
                     seriesId: nextUp.seriesId ?? seriesId,
                     seriesTitle: seriesTitle,
+                    seasonNumber: nextUp.parentIndexNumber,
+                    episodeNumber: nextUp.indexNumber,
                     episodeTitle: nextUp.name,
                     subtitle: subtitle,
                     posterURL: poster,

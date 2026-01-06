@@ -580,28 +580,52 @@ private struct HomePosterCard: View {
         (item.type ?? "").lowercased() == "episode"
     }
 
-    private var primaryTitle: String {
-        if isEpisode {
-            return item.seriesName ?? item.name
-        }
-        return item.name
+    private var displaySeriesTitle: String {
+        item.seriesName?.isEmpty == false ? (item.seriesName ?? item.name) : item.name
     }
 
-    private var secondaryTitle: String? {
+    private var episodeDescriptor: String? {
         guard isEpisode else { return nil }
         var parts: [String] = []
-        if let s = item.parentIndexNumber, s > 0 { parts.append("S\(s)") }
-        if let e = item.indexNumber, e > 0 { parts.append("E\(e)") }
-        let se = parts.joined()
-        if se.isEmpty { return item.name }
-        return "\(se) • \(item.name)"
+        if let s = item.parentIndexNumber, s > 0 { parts.append("Season \(s)") }
+        if let e = item.indexNumber, e > 0 { parts.append("Episode \(e)") }
+        let joined = parts.joined(separator: " • ")
+        return joined.isEmpty ? nil : joined
+    }
+
+    private var resumeLabelVisible: Bool {
+        if let ud = item.userData,
+           let pos = ud.playbackPositionTicks,
+           pos > 0,
+           (ud.played ?? false) == false {
+            return true
+        }
+        return false
+    }
+
+    private var continueWatchingImageURL: URL? {
+        guard isEpisode else { return session.itemImageURL(for: item, maxWidth: 420) }
+
+        // Episodes: prefer Season Primary artwork, then Series Primary, then episode Primary.
+        if let seasonId = item.seasonId, !seasonId.isEmpty {
+            return session.itemImageURL(itemId: seasonId, kind: "Primary", maxWidth: 420)
+                ?? session.itemImageURL(for: item, maxWidth: 420)
+        }
+        if let seriesId = item.seriesId, !seriesId.isEmpty {
+            return session.itemImageURL(itemId: seriesId, kind: "Primary", maxWidth: 420)
+                ?? session.itemImageURL(for: item, maxWidth: 420)
+        }
+        return session.itemImageURL(for: item, maxWidth: 420)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .bottomLeading) {
-                if let url = session.itemImageURL(for: item, maxWidth: 420) {
-                    BBCachedAsyncImage(url: url, targetSize: CGSize(width: cardSize.w * 2.0, height: cardSize.h * 2.0)) { phase in
+                if let url = continueWatchingImageURL {
+                    BBCachedAsyncImage(
+                        url: url,
+                        targetSize: CGSize(width: cardSize.w * 2.0, height: cardSize.h * 2.0)
+                    ) { phase in
                         switch phase {
                         case .empty:
                             AnyView(Rectangle().fill(.white.opacity(0.08)))
@@ -622,33 +646,45 @@ private struct HomePosterCard: View {
                 }
 
                 LinearGradient(
-                    gradient: Gradient(colors: [Color.black.opacity(0.0), Color.black.opacity(0.75)]),
+                    gradient: Gradient(colors: [Color.black.opacity(0.0), Color.black.opacity(0.78)]),
                     startPoint: .top,
                     endPoint: .bottom
                 )
 
+                // Text overlay
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(primaryTitle)
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
+                    if isEpisode {
+                        Text(displaySeriesTitle)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
 
-                    if let sub = secondaryTitle {
-                        Text(sub)
+                        if let descriptor = episodeDescriptor {
+                            Text(descriptor)
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.90))
+                                .lineLimit(1)
+                        }
+
+                        Text(item.name)
                             .font(.caption2)
                             .foregroundColor(.white.opacity(0.88))
+                            .lineLimit(2)
+                    } else {
+                        Text(item.name)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.white)
                             .lineLimit(1)
                     }
-                    if let ud = item.userData,
-                       let pos = ud.playbackPositionTicks,
-                       pos > 0,
-                       (ud.played ?? false) == false {
+
+                    if resumeLabelVisible {
                         Text("Resume")
                             .font(.caption2.weight(.semibold))
                             .foregroundColor(BrockbusterTheme.brockGold)
                     }
                 }
                 .padding(8)
+                .background(Color.black.opacity(0.001))
             }
             .frame(width: cardSize.w, height: cardSize.h)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -658,9 +694,6 @@ private struct HomePosterCard: View {
             )
             #if os(tvOS)
             .focusable(true)
-            //.focusEffect(.automatic)
-            // tvOS will apply its own parallax/scale focus styling.
-            // Keep a subtle gold outline at all times for brand consistency.
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(BrockbusterTheme.brockGold.opacity(0.22), lineWidth: 2)

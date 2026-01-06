@@ -96,6 +96,13 @@ struct NowPlayingFullscreenView: View {
                 }
             }
         }
+        .onChange(of: nowPlaying.item?.id) { _ in
+            // When autoplay advances to the next episode, ensure our scrubber state
+            // resets so the slider immediately reflects the new item.
+            isScrubbing = false
+            scrubProgress = 0
+            scheduleOverlayAutoHide()
+        }
         .onDisappear {
             // If the user dismisses the fullscreen player, we minimize into the Now Playing bar.
             nowPlaying.minimizePlayer()

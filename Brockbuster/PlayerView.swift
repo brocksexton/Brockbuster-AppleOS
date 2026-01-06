@@ -460,6 +460,7 @@ struct PlayerView: View {
 
     private var scrubber: some View {
         VStack(spacing: 6) {
+#if !os(tvOS)
             Slider(
                 value: Binding(
                     get: { uiCurrentSeconds },
@@ -469,6 +470,7 @@ struct PlayerView: View {
             ) { editing in
                 handleScrubEditingChanged(editing)
             }
+#endif
 
             HStack {
                 Text(CustomPlayerTimeFormatter.format(uiCurrentSeconds))

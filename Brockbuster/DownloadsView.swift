@@ -75,6 +75,7 @@ struct DownloadsView: View {
                                             Label("Delete", systemImage: "trash")
                                         }
                                     }
+#if !os(tvOS)
                                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                         Button(role: .destructive) {
                                             downloads.remove(record: rec)
@@ -82,6 +83,7 @@ struct DownloadsView: View {
                                             Label("Delete", systemImage: "trash")
                                         }
                                     }
+#endif
                                 }
                             }
                         }
@@ -125,6 +127,7 @@ struct DownloadsView: View {
                                                 Label("Delete", systemImage: "trash")
                                             }
                                         }
+#if !os(tvOS)
                                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                             Button {
                                                 downloads.enqueue(item: JellyfinClient.LibraryItem(
@@ -155,6 +158,7 @@ struct DownloadsView: View {
                                                 Label("Delete", systemImage: "trash")
                                             }
                                         }
+#endif
                                 }
                             }
                         }

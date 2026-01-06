@@ -284,13 +284,23 @@ struct BugReportView: View {
             }
 
             Section(header: Text("What happened?")) {
-                TextField("Short summary", text: $subject)
+                #if !os(tvOS)
                 TextEditor(text: $details)
                     .frame(minHeight: 140)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .stroke(.secondary.opacity(0.25), lineWidth: 1)
                     )
+                #else
+                Text("Enter details on iPhone or iPad to include more information.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .frame(minHeight: 140, alignment: .topLeading)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(.secondary.opacity(0.25), lineWidth: 1)
+                    )
+                #endif
             }
 
             Section {

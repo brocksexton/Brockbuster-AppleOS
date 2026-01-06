@@ -31,16 +31,20 @@ struct NowPlayingFullscreenView: View {
             if let player = nowPlaying.currentPlayer() {
                 AVPlayerViewControllerRepresentable(player: player)
                     .ignoresSafeArea()
-                    // AVPlayerViewController aggressively consumes touch events.
-                    // Use a simultaneous gesture so taps still toggle our overlay.
-                    .simultaneousGesture(
-                        TapGesture().onEnded { handleToggleOverlay() }
-                    )
+                    .allowsHitTesting(false)
             } else {
                 Color.black
                     .ignoresSafeArea()
                     .onTapGesture { handleToggleOverlay() }
             }
+
+            // Tap catcher for toggling our overlay (player view has interactions disabled).
+            // Placed above the video but below controls so buttons/sliders still work.
+            Color.clear
+                .contentShape(Rectangle())
+                .ignoresSafeArea()
+                .onTapGesture { handleToggleOverlay() }
+
 
             // Loading state: show while we are obtaining the stream URL / play session.
             if nowPlaying.currentPlayer() == nil || nowPlaying.isPreparingPlayback {
@@ -271,20 +275,29 @@ struct NowPlayingFullscreenView: View {
                 HStack(spacing: 8) {
                     // Prefer a Jellyfin Logo image if available.
                     if let logoURL = nowPlaying.logoURL(maxWidth: 900) {
-                        BBCachedAsyncImage(url: logoURL) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFit()
-                            default:
-                                Text(headerPrimaryTitle)
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundStyle(.white)
+                        VStack(alignment: .leading, spacing: 2) {
+                            BBCachedAsyncImage(url: logoURL) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .scaledToFit()
+                                default:
+                                    // If the logo fails to load, fall back immediately to text.
+                                    Text(headerPrimaryTitle)
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundStyle(.white)
+                                }
                             }
+                            .frame(height: 26)
+                            .shadow(color: .black.opacity(0.55), radius: 8, x: 0, y: 5)
+
+                            // Always show the title as well so playback context is never “blank”.
+                            Text(headerPrimaryTitle)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.92))
+                                .lineLimit(1)
                         }
-                        .frame(height: 26)
-                        .shadow(color: .black.opacity(0.55), radius: 8, x: 0, y: 5)
                     } else {
                         Text(headerPrimaryTitle)
                             .font(.system(size: 18, weight: .bold))
@@ -352,6 +365,7 @@ struct NowPlayingFullscreenView: View {
             }
 
             VStack(spacing: 6) {
+#if !os(tvOS)
                 Slider(
                     value: Binding(
                         get: { isScrubbing ? scrubProgress : nowPlaying.progress },
@@ -370,6 +384,7 @@ struct NowPlayingFullscreenView: View {
                         }
                     }
                 )
+#endif
 
                 HStack {
                     Text(formatTime(currentSeconds))
@@ -666,6 +681,7 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         #else
         // iOS/iPadOS: we provide a fully custom overlay UI.
         vc.showsPlaybackControls = false
+        vc.view.isUserInteractionEnabled = false
         #endif
         #if os(iOS) || os(visionOS)
         vc.allowsPictureInPicturePlayback = true

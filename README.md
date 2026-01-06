@@ -135,10 +135,10 @@ Users can report issues via:
 - **Shaking their iPhone**, which prompts a bug report flow
 
 ## Screens
-![iPhone Home](../assets/screenshots/v0.1.0-iphone-home.png)
-![iPhone Series](../assets/screenshots/v0.1.0-iphone-series.png)
-![iPad Login](../assets/screenshots/v0.1.0-ipad-login.png)
-![iPad Player](../assets/screenshots/v0.1.0-ipad-player.png)
-![tvOS Welcome Tour](../assets/screenshots/v0.1.0-tvOS-welcome.png)
-![tvOS Shows Library](../assets/screenshots/v0.1.0-tvOS-shows.png)
-![tvOS Server Health](../assets/screenshots/v0.1.0-tvOS-health.png)
+![iPhone Home](./assets/screenshots/v0.1.0-iphone-home.png)
+![iPhone Series](./assets/screenshots/v0.1.0-iphone-series.png)
+![iPad Login](./assets/screenshots/v0.1.0-ipad-login.png)
+![iPad Player](./assets/screenshots/v0.1.0-ipad-player.png)
+![tvOS Welcome Tour](./assets/screenshots/v0.1.0-tvOS-welcome.png)
+![tvOS Shows Library](./assets/screenshots/v0.1.0-tvOS-shows.png)
+![tvOS Server Health](./assets/screenshots/v0.1.0-tvOS-health.png)

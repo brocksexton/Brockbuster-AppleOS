@@ -18,6 +18,7 @@ struct NowPlayingFullscreenView: View {
 
     @State private var showingSubtitlesMenu: Bool = false
     @State private var showingQualityMenu: Bool = false
+    @State private var showingCastSheet: Bool = false
 
     @State private var showingRemoteSubtitles: Bool = false
     @State private var remoteSubtitleResults: [JellyfinClient.RemoteSubtitleInfo] = []
@@ -83,6 +84,27 @@ struct NowPlayingFullscreenView: View {
                 upNextOverlay(state: state)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+        }
+        .sheet(isPresented: $showingCastSheet) {
+            CastSheetView()
+                .presentationDetents([.medium, .large])
+        }
+        .confirmationDialog("Subtitles", isPresented: $showingSubtitlesMenu, titleVisibility: .visible) {
+            subtitleDialogButtons
+        }
+        .confirmationDialog("Quality", isPresented: $showingQualityMenu, titleVisibility: .visible) {
+            qualityDialogButtons
+        }
+        .sheet(isPresented: $showingRemoteSubtitles) {
+            RemoteSubtitlesSheet(
+                title: headerPrimaryTitle,
+                isLoading: remoteSubtitlesLoading,
+                errorMessage: remoteSubtitlesError,
+                results: remoteSubtitleResults,
+                onRefresh: { Task { await fetchRemoteSubtitles() } },
+                onDownload: { sub in Task { await downloadRemoteSubtitle(sub) } }
+            )
+            .presentationDetents([.medium, .large])
         }
         .onAppear {
             scheduleOverlayAutoHide()
@@ -156,6 +178,16 @@ struct NowPlayingFullscreenView: View {
                 Spacer(minLength: 0)
 
                 HStack(spacing: 10) {
+                    Button { showingCastSheet = true } label: {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .background(.black.opacity(0.50), in: Circle())
+                            .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+
                     Button { showingSubtitlesMenu = true } label: {
                         Image(systemName: subtitlesEnabled ? "captions.bubble.fill" : "captions.bubble")
                             .font(.system(size: 16, weight: .semibold))
@@ -206,23 +238,6 @@ struct NowPlayingFullscreenView: View {
                 in: RoundedRectangle(cornerRadius: 18, style: .continuous)
             )
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(0.10), lineWidth: 1))
-        }
-        .confirmationDialog("Subtitles", isPresented: $showingSubtitlesMenu, titleVisibility: .visible) {
-            subtitleDialogButtons
-        }
-        .confirmationDialog("Quality", isPresented: $showingQualityMenu, titleVisibility: .visible) {
-            qualityDialogButtons
-        }
-        .sheet(isPresented: $showingRemoteSubtitles) {
-            RemoteSubtitlesSheet(
-                title: headerPrimaryTitle,
-                isLoading: remoteSubtitlesLoading,
-                errorMessage: remoteSubtitlesError,
-                results: remoteSubtitleResults,
-                onRefresh: { Task { await fetchRemoteSubtitles() } },
-                onDownload: { sub in Task { await downloadRemoteSubtitle(sub) } }
-            )
-            .presentationDetents([.medium, .large])
         }
     }
 
@@ -590,11 +605,15 @@ struct NowPlayingFullscreenView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
+                        .truncationMode(.tail)
+                        .minimumScaleFactor(0.85)
+                        .allowsTightening(true)
 
                     Text(remaining > 0 ? "Playing in \(remaining)s" : "Playing now")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.75))
                 }
+                .dynamicTypeSize(.xSmall ... .xxxLarge)
 
                 Spacer(minLength: 0)
 
@@ -635,6 +654,13 @@ struct NowPlayingFullscreenView: View {
         overlayHideTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled else { return }
+            // If a modal/menu is open, keep the overlay visible. Users should not
+            // lose access to dismissal controls while interacting with a sheet/
+            // dialog.
+            if showingCastSheet || showingSubtitlesMenu || showingQualityMenu || showingRemoteSubtitles {
+                overlayVisible = true
+                return
+            }
             withAnimation(.easeInOut(duration: 0.20)) {
                 overlayVisible = false
             }

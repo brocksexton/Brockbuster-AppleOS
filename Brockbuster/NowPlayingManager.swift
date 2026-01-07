@@ -146,6 +146,53 @@ final class NowPlayingManager: ObservableObject {
 
     private weak var sessionRef: SessionStore?
 
+    // MARK: - Casting helpers
+
+    /// Build a best-effort payload for casting the currently playing item.
+    ///
+    /// For broad device compatibility, we generate a direct Jellyfin stream URL
+    /// with the `api_key` query parameter so targets that cannot send custom headers
+    /// (DLNA, some receivers) can still access the stream.
+    func makeCastPayload() -> CastMediaPayload? {
+        guard let item else { return nil }
+        guard let session = sessionRef else { return nil }
+
+        let ctx = item.playbackContext
+        guard let url = session.makeStreamURL(
+            itemId: item.id,
+            mediaSourceId: ctx?.mediaSourceId,
+            playSessionId: ctx?.playSessionId
+        ) else {
+            return nil
+        }
+
+        let subtitle: String? = {
+            if item.mediaKind == .episode {
+                var parts: [String] = []
+                if let s = item.seasonNumber { parts.append("S\(s)") }
+                if let e = item.episodeNumber { parts.append("E\(e)") }
+                let se = parts.joined(separator: " • ")
+                let epTitle = item.episodeTitle ?? item.title
+                if se.isEmpty { return epTitle }
+                return "\(se) • \(epTitle)"
+            }
+            return item.subtitle
+        }()
+
+        return CastMediaPayload(
+            url: url,
+            title: item.seriesTitle ?? item.title,
+            subtitle: subtitle,
+            posterURL: item.posterURL
+        )
+    }
+
+    /// When sending playback to an external device, pause local playback.
+    /// (We keep the Now Playing bar state alive; the user can resume locally later.)
+    func pauseLocalPlaybackForCasting() {
+        currentPlayer()?.pause()
+    }
+
     // MARK: - Remote Subtitles
 
     @MainActor
@@ -757,8 +804,30 @@ final class NowPlayingManager: ObservableObject {
             let subtitle = [se, nextUp.name].filter { !$0.isEmpty }.joined(separator: " • ")
             let seriesTitle = nextUp.seriesName ?? current.title
 
-            // Prefer series poster; fall back to episode primary.
-            let poster = session.itemImageURL(itemId: nextUp.seriesId ?? nextUp.id, kind: "Primary", maxWidth: 700)
+            // Prefer landscape-friendly art for the Up Next overlay:
+            // 1) Season Backdrop/Thumb (if available)
+            // 2) Series Backdrop/Thumb
+            // 3) Series Primary
+            // 4) Episode Primary
+            let poster: URL? = {
+                // Season
+                if let seasonIdOpt = nextUp.seasonId {
+                    let seasonId = seasonIdOpt
+                    if !seasonId.isEmpty {
+                        if let u = session.itemImageURL(itemId: seasonId, kind: "Backdrop", maxWidth: 900) { return u }
+                        if let u = session.itemImageURL(itemId: seasonId, kind: "Thumb", maxWidth: 900) { return u }
+                    }
+                }
+                // Series
+                let sid = nextUp.seriesId ?? seriesId
+                if !sid.isEmpty {
+                    if let u = session.itemImageURL(itemId: sid, kind: "Backdrop", maxWidth: 900) { return u }
+                    if let u = session.itemImageURL(itemId: sid, kind: "Thumb", maxWidth: 900) { return u }
+                    if let u = session.itemImageURL(itemId: sid, kind: "Primary", maxWidth: 700) { return u }
+                }
+                // Episode fallback
+                return session.itemImageURL(itemId: nextUp.id, kind: "Primary", maxWidth: 700)
+            }()
 
             await MainActor.run {
                 upNext = UpNextState(

@@ -10,6 +10,7 @@ struct BrockbusterApp: App {
     @StateObject private var accountManager = AccountManager()
     @StateObject private var nowPlaying = NowPlayingManager()
     @StateObject private var downloads = DownloadManager()
+    @StateObject private var castManager = CastManager()
     @AppStorage("settings.showAccountChooserOnLaunch") private var showAccountChooserOnLaunch: Bool = true
 
     init() {
@@ -33,6 +34,7 @@ struct BrockbusterApp: App {
                 .environmentObject(accountManager)
                 .environmentObject(nowPlaying)
                 .environmentObject(downloads)
+                .environmentObject(castManager)
                 .bbEnableBugReportShake(session: session)
         }
     }

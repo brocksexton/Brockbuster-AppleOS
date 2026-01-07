@@ -716,6 +716,23 @@ final class SessionStore: ObservableObject {
         try await playbackContext(for: itemId).url
     }
 
+    /// Build a direct stream URL for a specific playback context.
+    ///
+    /// This helper exists so other parts of the app (e.g. Casting) can obtain a
+    /// Jellyfin-authenticated stream URL without needing direct access to the
+    /// underlying `JellyfinClient` instance (which is intentionally private).
+    ///
+    /// The generated URL includes the `api_key` query parameter (access token)
+    /// which is required for targets that cannot send custom HTTP headers.
+    func makeStreamURL(itemId: String, mediaSourceId: String?, playSessionId: String?) -> URL? {
+        client.makeStreamURL(
+            itemId: itemId,
+            mediaSourceId: mediaSourceId,
+            playSessionId: playSessionId,
+            userId: currentUser?.id
+        )
+    }
+
     /// Returns a direct, file-oriented URL suitable for offline downloading.
     ///
     /// This intentionally prefers the Videos stream endpoint (static=true) rather than

@@ -658,23 +658,36 @@ private struct HomePosterCard: View {
                             .font(.caption.weight(.semibold))
                             .foregroundColor(.white)
                             .lineLimit(1)
+                            .truncationMode(.tail)
+                            .minimumScaleFactor(0.85)
+                            .allowsTightening(true)
 
                         if let descriptor = episodeDescriptor {
                             Text(descriptor)
                                 .font(.caption2)
                                 .foregroundColor(.white.opacity(0.90))
                                 .lineLimit(1)
+                                .truncationMode(.tail)
+                                .minimumScaleFactor(0.85)
+                                .allowsTightening(true)
                         }
 
                         Text(item.name)
                             .font(.caption2)
                             .foregroundColor(.white.opacity(0.88))
                             .lineLimit(2)
+                            .truncationMode(.tail)
+                            .minimumScaleFactor(0.80)
+                            .allowsTightening(true)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
                         Text(item.name)
                             .font(.caption.weight(.semibold))
                             .foregroundColor(.white)
                             .lineLimit(1)
+                            .truncationMode(.tail)
+                            .minimumScaleFactor(0.85)
+                            .allowsTightening(true)
                     }
 
                     if resumeLabelVisible {
@@ -684,6 +697,9 @@ private struct HomePosterCard: View {
                     }
                 }
                 .padding(8)
+                // Prevent very large Dynamic Type sizes from blowing up tiny card overlays.
+                // The underlying detail pages remain fully Dynamic Type capable.
+                .dynamicTypeSize(.xSmall ... .xxxLarge)
                 .background(Color.black.opacity(0.001))
             }
             .frame(width: cardSize.w, height: cardSize.h)

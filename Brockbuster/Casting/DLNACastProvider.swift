@@ -64,31 +64,6 @@ final class DLNACastProvider: BaseCastProvider {
 
     // MARK: - Device resolution
 
-    /// Resolve a DLNA/UPnP MediaRenderer from a device description (the `LOCATION` URL).
-    ///
-    /// This supports manual entry when multicast SSDP discovery is unavailable or when a
-    /// target device does not respond to the M-SEARCH probe.
-    func resolveDevice(fromDescriptionURL descriptionURL: URL) async throws -> CastDevice {
-        let (data, _) = try await URLSession.shared.data(from: descriptionURL)
-        let parser = UPnPDeviceDescriptionParser(baseURL: descriptionURL)
-        guard let desc = parser.parse(data: data) else {
-            throw NSError(domain: "DLNA", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unable to parse device description"]) 
-        }
-
-        // Prefer AVTransport v1.
-        let av = desc.services.first(where: { $0.serviceType.contains("AVTransport") })
-        guard let controlURL = av?.controlURL else {
-            throw NSError(domain: "DLNA", code: -2, userInfo: [NSLocalizedDescriptionKey: "Device does not expose AVTransport control URL"]) 
-        }
-
-        return CastDevice(
-            id: controlURL.absoluteString,
-            name: desc.friendlyName,
-            provider: .dlna,
-            detail: descriptionURL.host
-        )
-    }
-
     private func resolveDevices(from responses: [SSDPDiscovery.Response]) async -> [CastDevice] {
         var out: [CastDevice] = []
         for r in responses {

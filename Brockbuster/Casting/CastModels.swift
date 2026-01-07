@@ -1,6 +1,6 @@
 import Foundation
 
-enum CastProviderKind: String, CaseIterable, Identifiable, Codable {
+enum CastProviderKind: String, CaseIterable, Identifiable {
     case airPlay
     case dlna
     case googleCast
@@ -30,7 +30,7 @@ enum CastProviderKind: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-struct CastDevice: Identifiable, Equatable, Codable {
+struct CastDevice: Identifiable, Equatable {
     let id: String
     let name: String
     let provider: CastProviderKind

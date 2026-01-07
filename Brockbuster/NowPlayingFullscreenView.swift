@@ -2,12 +2,18 @@ import SwiftUI
 import AVKit
 import AVFoundation
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 /// Fullscreen player UI driven by NowPlayingManager's AVPlayer.
 /// Uses AVPlayerViewController so we get subtitles/audio selection and PiP.
 struct NowPlayingFullscreenView: View {
     @EnvironmentObject private var nowPlaying: NowPlayingManager
     @EnvironmentObject private var castManager: CastManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @State private var overlayVisible: Bool = true
     @State private var overlayHideTask: Task<Void, Never>? = nil
@@ -30,6 +36,20 @@ struct NowPlayingFullscreenView: View {
     @State private var remoteSubtitlesError: String? = nil
 
     private let upNextTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    /// Some SF Symbols are not available on all OS versions/devices.
+    /// Prefer the most descriptive symbol, but fall back gracefully.
+    private var remoteSymbolName: String {
+        #if canImport(UIKit)
+        let candidates = ["tv.remote", "tv.remote.fill", "tv", "display"]
+        for name in candidates {
+            if UIImage(systemName: name) != nil { return name }
+        }
+        return "tv"
+        #else
+        return "tv"
+        #endif
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -161,17 +181,30 @@ struct NowPlayingFullscreenView: View {
     }
 
     private var overlay: some View {
-        VStack(spacing: 0) {
-            topBar
+        // Use safe-area-aware padding so top controls never collide with the Dynamic Island / notch.
+        GeometryReader { proxy in
+            let topInset = proxy.safeAreaInsets.top
+            let topPadding = max(10, topInset + 6)
+            let bottomInset = proxy.safeAreaInsets.bottom
+            let bottomPadding = max(18, bottomInset + 12)
 
-            Spacer(minLength: 0)
+            VStack(spacing: 0) {
+                topBar
 
-            transportControls
+                Spacer(minLength: 0)
+
+                transportControls
+            }
+            .padding(.top, topPadding)
+            .padding(.bottom, bottomPadding)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .padding(.top, 10)
-        .padding(.bottom, 18)
-        .padding(.horizontal, 16)
         .ignoresSafeArea()
+    }
+
+    private var isLandscape: Bool {
+        verticalSizeClass == .compact
     }
 
     private var topBar: some View {
@@ -188,64 +221,6 @@ struct NowPlayingFullscreenView: View {
                 .buttonStyle(.plain)
 
                 Spacer(minLength: 0)
-
-                HStack(spacing: 10) {
-                    if isRemoteConnected {
-                        Button { showingVirtualRemote = true } label: {
-                            Image(systemName: "tv.remote")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 40, height: 40)
-                                .background(.black.opacity(0.50), in: Circle())
-                                .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Remote")
-                    }
-
-                    Button { showingCastSheet = true } label: {
-                        Image(systemName: "dot.radiowaves.left.and.right")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 40, height: 40)
-                            .background(.black.opacity(0.50), in: Circle())
-                            .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button { showingSubtitlesMenu = true } label: {
-                        Image(systemName: subtitlesEnabled ? "captions.bubble.fill" : "captions.bubble")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 40, height: 40)
-                            .background(.black.opacity(0.50), in: Circle())
-                            .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button { showingQualityMenu = true } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 40, height: 40)
-                            .background(.black.opacity(0.50), in: Circle())
-                            .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        nowPlaying.stop(playedToCompletion: false, failed: false)
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 40, height: 40)
-                            .background(.black.opacity(0.50), in: Circle())
-                            .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                }
             }
 
             ticketHeader
@@ -378,7 +353,7 @@ struct NowPlayingFullscreenView: View {
     }
 
     private var transportControls: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             HStack(spacing: 26) {
                 Button { seekRelative(-10) } label: {
                     Image(systemName: "gobackward.10")
@@ -455,7 +430,97 @@ struct NowPlayingFullscreenView: View {
             .padding(.vertical, 10)
             .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(0.10), lineWidth: 1))
+
+            actionDock
+                .frame(maxWidth: .infinity, alignment: isLandscape ? .trailing : .center)
         }
+    }
+
+    // MARK: - Action Dock (compact)
+
+    private var actionDock: some View {
+        HStack(spacing: 10) {
+            actionIconButton(
+                title: "Remote",
+                systemImage: remoteSymbolName,
+                isEnabled: isRemoteConnected,
+                showsConnectedDot: true,
+                action: { showingVirtualRemote = true }
+            )
+
+            actionIconButton(
+                title: "Cast",
+                systemImage: "dot.radiowaves.left.and.right",
+                isEnabled: true,
+                showsConnectedDot: false,
+                action: { showingCastSheet = true }
+            )
+
+            actionIconButton(
+                title: "Subtitles",
+                systemImage: subtitlesEnabled ? "captions.bubble.fill" : "captions.bubble",
+                isEnabled: true,
+                showsConnectedDot: false,
+                action: { showingSubtitlesMenu = true }
+            )
+
+            actionIconButton(
+                title: "Quality",
+                systemImage: "slider.horizontal.3",
+                isEnabled: true,
+                showsConnectedDot: false,
+                action: { showingQualityMenu = true }
+            )
+
+            actionIconButton(
+                title: "Close",
+                systemImage: "xmark.circle.fill",
+                isEnabled: true,
+                showsConnectedDot: false,
+                action: {
+                    nowPlaying.stop(playedToCompletion: false, failed: false)
+                    dismiss()
+                }
+            )
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+        .overlay(Capsule(style: .continuous).stroke(.white.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.30), radius: 14, x: 0, y: 8)
+    }
+
+    private func actionIconButton(
+        title: String,
+        systemImage: String,
+        isEnabled: Bool,
+        showsConnectedDot: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            action()
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(.black.opacity(0.28), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+
+                if showsConnectedDot && isEnabled {
+                    Circle()
+                        .fill(.green)
+                        .frame(width: 8, height: 8)
+                        .overlay(Circle().stroke(.black.opacity(0.55), lineWidth: 1))
+                        .offset(x: 2, y: -2)
+                }
+            }
+            .opacity(isEnabled ? 1.0 : 0.35)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityLabel(title)
     }
 
     private var currentSeconds: Double {

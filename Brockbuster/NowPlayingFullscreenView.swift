@@ -6,6 +6,7 @@ import AVFoundation
 /// Uses AVPlayerViewController so we get subtitles/audio selection and PiP.
 struct NowPlayingFullscreenView: View {
     @EnvironmentObject private var nowPlaying: NowPlayingManager
+    @EnvironmentObject private var castManager: CastManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var overlayVisible: Bool = true
@@ -19,6 +20,9 @@ struct NowPlayingFullscreenView: View {
     @State private var showingSubtitlesMenu: Bool = false
     @State private var showingQualityMenu: Bool = false
     @State private var showingCastSheet: Bool = false
+
+    @State private var showingVirtualRemote: Bool = false
+    @StateObject private var routeMonitor = RemoteRouteMonitor()
 
     @State private var showingRemoteSubtitles: Bool = false
     @State private var remoteSubtitleResults: [JellyfinClient.RemoteSubtitleInfo] = []
@@ -88,6 +92,14 @@ struct NowPlayingFullscreenView: View {
         .sheet(isPresented: $showingCastSheet) {
             CastSheetView()
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showingVirtualRemote) {
+            VirtualRemoteSheet(
+                isPresented: $showingVirtualRemote,
+                connectedName: connectedTargetName,
+                providerLabel: connectedProviderLabel
+            )
+            .presentationDetents([.medium, .large])
         }
         .confirmationDialog("Subtitles", isPresented: $showingSubtitlesMenu, titleVisibility: .visible) {
             subtitleDialogButtons
@@ -178,6 +190,19 @@ struct NowPlayingFullscreenView: View {
                 Spacer(minLength: 0)
 
                 HStack(spacing: 10) {
+                    if isRemoteConnected {
+                        Button { showingVirtualRemote = true } label: {
+                            Image(systemName: "tv.remote")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 40, height: 40)
+                                .background(.black.opacity(0.50), in: Circle())
+                                .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remote")
+                    }
+
                     Button { showingCastSheet = true } label: {
                         Image(systemName: "dot.radiowaves.left.and.right")
                             .font(.system(size: 16, weight: .semibold))
@@ -657,7 +682,7 @@ struct NowPlayingFullscreenView: View {
             // If a modal/menu is open, keep the overlay visible. Users should not
             // lose access to dismissal controls while interacting with a sheet/
             // dialog.
-            if showingCastSheet || showingSubtitlesMenu || showingQualityMenu || showingRemoteSubtitles {
+            if showingCastSheet || showingSubtitlesMenu || showingQualityMenu || showingRemoteSubtitles || showingVirtualRemote {
                 overlayVisible = true
                 return
             }
@@ -665,6 +690,34 @@ struct NowPlayingFullscreenView: View {
                 overlayVisible = false
             }
         }
+    }
+
+    private var isRemoteConnected: Bool {
+        if castManager.connectedDevice != nil { return true }
+        return routeMonitor.isAirPlayActive
+    }
+
+    private var connectedTargetName: String {
+        if let device = castManager.connectedDevice {
+            return device.name
+        }
+        if let route = routeMonitor.routeName {
+            return route
+        }
+        return "This Device"
+    }
+
+    private var connectedProviderLabel: String {
+        if let device = castManager.connectedDevice {
+            switch device.provider {
+            case .googleCast: return "Chromecast"
+            case .roku: return "Roku"
+            case .dlna: return "DLNA"
+            case .airPlay: return "AirPlay"
+            case .brockbusterReceiver: return "Brockbuster"
+            }
+        }
+        return routeMonitor.isAirPlayActive ? "AirPlay" : "Local"
     }
     // MARK: - Remote subtitle helpers
 
@@ -726,5 +779,452 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         if uiViewController.player !== player {
             uiViewController.player = player
         }
+    }
+}
+
+// MARK: - Virtual TV Remote
+
+/// Lightweight monitor for whether the current audio route is using AirPlay.
+/// We use this to conditionally show the Virtual Remote button.
+final class RemoteRouteMonitor: ObservableObject {
+    @Published private(set) var isAirPlayActive: Bool = false
+    @Published private(set) var routeName: String? = nil
+
+    private var tokens: [NSObjectProtocol] = []
+
+    init() {
+        refresh()
+        let center = NotificationCenter.default
+        tokens.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.refresh()
+        })
+        tokens.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.refresh()
+        })
+    }
+
+    deinit {
+        for t in tokens { NotificationCenter.default.removeObserver(t) }
+    }
+
+    private func refresh() {
+        let route = AVAudioSession.sharedInstance().currentRoute
+        let airPlayOutput = route.outputs.first(where: { $0.portType == .airPlay })
+        isAirPlayActive = (airPlayOutput != nil)
+        routeName = airPlayOutput?.portName
+    }
+}
+
+private enum VirtualRemoteTheme: String, CaseIterable, Identifiable {
+    case glass
+    case blockbuster
+    case minimal
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .glass: return "Glass"
+        case .blockbuster: return "Blockbuster"
+        case .minimal: return "Minimal"
+        }
+    }
+}
+
+/// A professional, sleek remote control sheet that stays open independently of
+/// the player's auto-hiding overlay. This primarily controls the local AVPlayer
+/// (including when routed via AirPlay). Provider-specific deep controls can be
+/// added later (Chromecast/Roku/DLNA).
+struct VirtualRemoteSheet: View {
+    @EnvironmentObject private var nowPlaying: NowPlayingManager
+    @EnvironmentObject private var castManager: CastManager
+
+    @Binding var isPresented: Bool
+    let connectedName: String
+    let providerLabel: String
+
+    @AppStorage("remote.theme") private var storedTheme: String = VirtualRemoteTheme.glass.rawValue
+    @AppStorage("remote.buttonScale") private var buttonScale: Double = 1.0
+    @AppStorage("remote.skipBackSeconds") private var skipBackSeconds: Double = 10
+    @AppStorage("remote.skipForwardSeconds") private var skipForwardSeconds: Double = 30
+
+    @State private var showingCustomize: Bool = false
+    @State private var localScrub: Double = 0
+    @State private var isScrubbing: Bool = false
+
+    private var theme: VirtualRemoteTheme {
+        VirtualRemoteTheme(rawValue: storedTheme) ?? .glass
+    }
+
+    private var player: AVPlayer? { nowPlaying.currentPlayer() }
+
+    private var durationSeconds: Double {
+        guard let d = player?.currentItem?.duration.seconds, d.isFinite, d > 0 else { return 0 }
+        return d
+    }
+
+    private var currentSeconds: Double {
+        SessionStore.ticksToSeconds(nowPlaying.currentPositionTicks)
+    }
+
+    private var isPlaying: Bool {
+        nowPlaying.isPlaying
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 14) {
+                header
+                scrubber
+                transportGrid
+                quickActions
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .background(background)
+            .navigationTitle("Remote")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showingCustomize.toggle()
+                    } label: {
+                        Image(systemName: "paintbrush")
+                    }
+                    .accessibilityLabel("Customize remote")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isPresented = false
+                    } label: {
+                        Text("Done").font(.body.weight(.semibold))
+                    }
+                }
+            }
+            .sheet(isPresented: $showingCustomize) {
+                customizeSheet
+            }
+            .onAppear {
+                localScrub = nowPlaying.progress
+            }
+            .onChange(of: nowPlaying.progress) { newValue in
+                guard !isScrubbing else { return }
+                localScrub = newValue
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(.black.opacity(theme == .minimal ? 0.12 : 0.30))
+                Image(systemName: providerIcon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(themeAccent)
+            }
+            .frame(width: 44, height: 44)
+            .overlay(Circle().stroke(.white.opacity(theme == .minimal ? 0.10 : 0.14), lineWidth: 1))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(connectedName)
+                    .font(.headline)
+                    .foregroundStyle(primaryText)
+                    .lineLimit(1)
+                Text(providerLabel)
+                    .font(.subheadline)
+                    .foregroundStyle(secondaryText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+
+            if castManager.connectedDevice != nil {
+                Button(role: .destructive) {
+                    castManager.disconnect()
+                } label: {
+                    Text("Disconnect")
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+        }
+        .padding(14)
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(theme == .minimal ? 0.10 : 0.12), lineWidth: 1))
+    }
+
+    private var scrubber: some View {
+        VStack(spacing: 8) {
+            Slider(
+                value: Binding(
+                    get: { localScrub },
+                    set: { newValue in
+                        localScrub = newValue
+                        isScrubbing = true
+                    }
+                ),
+                in: 0...1,
+                onEditingChanged: { editing in
+                    if !editing {
+                        isScrubbing = false
+                        let target = durationSeconds * localScrub
+                        nowPlaying.seek(to: target)
+                    }
+                }
+            )
+
+            HStack {
+                Text(timeString(currentSeconds))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(secondaryText)
+                Spacer()
+                Text(timeString(max(0, durationSeconds - currentSeconds)))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(secondaryText)
+            }
+        }
+        .padding(14)
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(theme == .minimal ? 0.10 : 0.12), lineWidth: 1))
+    }
+
+    private var transportGrid: some View {
+        HStack(spacing: 12) {
+            remoteButton(icon: "gobackward", label: "Back") {
+                skip(by: -skipBackSeconds)
+            }
+            remoteButton(icon: isPlaying ? "pause.fill" : "play.fill", label: isPlaying ? "Pause" : "Play", isPrimary: true) {
+                togglePlayPause()
+            }
+            remoteButton(icon: "goforward", label: "Forward") {
+                skip(by: skipForwardSeconds)
+            }
+        }
+    }
+
+    private var quickActions: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                infoPill(title: "Skip", value: "\(Int(skipBackSeconds))s / \(Int(skipForwardSeconds))s")
+                infoPill(title: "Speed", value: playbackRateLabel)
+            }
+
+            HStack(spacing: 12) {
+                remoteSmallButton(icon: "speedometer", title: "Speed") {
+                    cyclePlaybackRate()
+                }
+                remoteSmallButton(icon: "speaker.wave.2", title: "Mute") {
+                    toggleMute()
+                }
+                remoteSmallButton(icon: "stop.fill", title: "Stop") {
+                    nowPlaying.stop(playedToCompletion: false, failed: false)
+                }
+            }
+        }
+        .padding(14)
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(theme == .minimal ? 0.10 : 0.12), lineWidth: 1))
+    }
+
+    private var customizeSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Appearance") {
+                    Picker("Theme", selection: $storedTheme) {
+                        ForEach(VirtualRemoteTheme.allCases) { t in
+                            Text(t.title).tag(t.rawValue)
+                        }
+                    }
+                    Slider(value: $buttonScale, in: 0.85...1.25, step: 0.05) {
+                        Text("Button size")
+                    }
+                    Text("Tip: Glass looks best with Brockbuster’s player overlay. Minimal is great for readability.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Controls") {
+                    Stepper("Skip back: \(Int(skipBackSeconds))s", value: $skipBackSeconds, in: 5...60, step: 5)
+                    Stepper("Skip forward: \(Int(skipForwardSeconds))s", value: $skipForwardSeconds, in: 10...120, step: 5)
+                }
+            }
+            .navigationTitle("Customize Remote")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showingCustomize = false }
+                        .font(.body.weight(.semibold))
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    // MARK: - Styling
+
+    private var providerIcon: String {
+        switch providerLabel.lowercased() {
+        case let s where s.contains("airplay"): return "airplayvideo"
+        case let s where s.contains("chromecast"): return "dot.radiowaves.left.and.right"
+        case let s where s.contains("roku"): return "tv"
+        case let s where s.contains("dlna"): return "tv.and.hifispeaker.fill"
+        default: return "tv"
+        }
+    }
+
+    private var themeAccent: Color {
+        switch theme {
+        case .glass: return .white
+        case .blockbuster: return Color(red: 1.0, green: 0.67, blue: 0.04) // Brockbuster gold-ish
+        case .minimal: return .primary
+        }
+    }
+
+    private var primaryText: Color {
+        theme == .minimal ? .primary : .white
+    }
+
+    private var secondaryText: Color {
+        theme == .minimal ? .secondary : .white.opacity(0.72)
+    }
+
+    private var background: some View {
+        Group {
+            switch theme {
+            case .minimal:
+                Color(.systemBackground)
+            case .blockbuster:
+                LinearGradient(
+                    colors: [Color(red: 0.06, green: 0.25, blue: 0.66), Color.black],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            case .glass:
+                LinearGradient(
+                    colors: [Color.black.opacity(0.88), Color.black.opacity(0.70)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        }
+        .ignoresSafeArea()
+    }
+
+    private var cardBackground: some ShapeStyle {
+        switch theme {
+        case .minimal:
+            return AnyShapeStyle(Color(.secondarySystemBackground))
+        case .blockbuster:
+            return AnyShapeStyle(Color.black.opacity(0.35))
+        case .glass:
+            return AnyShapeStyle(.ultraThinMaterial)
+        }
+    }
+
+    private func remoteButton(icon: String, label: String, isPrimary: Bool = false, action: @escaping () -> Void) -> some View {
+        let size: CGFloat = 70 * buttonScale
+        return Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: isPrimary ? 22 : 20, weight: .semibold))
+                Text(label)
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(isPrimary ? Color.black : primaryText)
+            .frame(width: size, height: size)
+            .background(isPrimary ? themeAccent : Color.black.opacity(theme == .minimal ? 0.08 : 0.30), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(.white.opacity(theme == .minimal ? 0.10 : 0.12), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private func remoteSmallButton(icon: String, title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(primaryText)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(Color.black.opacity(theme == .minimal ? 0.06 : 0.25), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(theme == .minimal ? 0.10 : 0.12), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func infoPill(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(secondaryText)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(primaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.black.opacity(theme == .minimal ? 0.06 : 0.25), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(theme == .minimal ? 0.10 : 0.12), lineWidth: 1))
+    }
+
+    // MARK: - Control actions
+
+    private func togglePlayPause() {
+        guard let player else { return }
+        if isPlaying {
+            player.pause()
+        } else {
+            player.play()
+        }
+    }
+
+    private func skip(by delta: Double) {
+        guard durationSeconds > 0 else { return }
+        let target = min(max(0, currentSeconds + delta), durationSeconds)
+        nowPlaying.seek(to: target)
+    }
+
+    private var playbackRateLabel: String {
+        let rate = player?.rate ?? 1.0
+        if abs(rate - 1.0) < 0.01 { return "1.0×" }
+        return String(format: "%.2g×", rate)
+    }
+
+    private func cyclePlaybackRate() {
+        guard let player else { return }
+        let current = player.rate
+        // Cycle: 1.0 -> 1.25 -> 1.5 -> 2.0 -> 1.0
+        let next: Float
+        if current < 1.1 { next = 1.25 }
+        else if current < 1.3 { next = 1.5 }
+        else if current < 1.75 { next = 2.0 }
+        else { next = 1.0 }
+
+        if isPlaying {
+            player.rate = next
+        } else {
+            // Rate change doesn't always persist while paused; store as preferred by playing briefly is not desirable.
+            // Best-effort: set and keep paused.
+            player.rate = next
+        }
+    }
+
+    private func toggleMute() {
+        guard let player else { return }
+        player.isMuted.toggle()
+    }
+
+    private func timeString(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        let total = Int(seconds.rounded())
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%d:%02d", m, s)
     }
 }

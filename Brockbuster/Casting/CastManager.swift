@@ -9,6 +9,12 @@ final class CastManager: ObservableObject {
     @Published private(set) var devices: [CastDevice] = []
     @Published private(set) var connection: CastConnectionState = .init()
 
+    /// Convenience accessor used by UI surfaces (player overlay, virtual remote, etc.).
+    /// Providers update `connection.connectedDevice`; this exposes it as a stable property.
+    var connectedDevice: CastDevice? {
+        connection.connectedDevice
+    }
+
     let providers: [CastProvider]
 
     private var cancellables: Set<AnyCancellable> = []

@@ -17,13 +17,28 @@
 
 ---
 
-## 📦 Version 0.1.0 — First Stable Release
+Brockbuster is a native SwiftUI client for [Jellyfin](https://jellyfin.org). Point it at your own
+Jellyfin server, sign in, and go. It was originally built for a private community server; this
+public release ships as a clean, generic client with the community-specific extras disabled
+(but included in source — see [Companion service features](#-companion-service-features-optional)).
+
 ---
 
-This release marks the first **stable milestone** of Brockbuster.
+## 🚀 Getting Started
 
-Core Jellyfin functionality is implemented and usable across supported Apple platforms.  
-While the project will continue to evolve, **this version is considered safe for regular use**.
+1. **Requirements**: Xcode with the iOS 26 / tvOS 26 / macOS 15 SDKs, and a Jellyfin server to connect to.
+2. Clone the repo and open `Brockbuster.xcodeproj`.
+3. In *Signing & Capabilities*, select your own development team and change the bundle identifiers.
+4. Build and run the `Brockbuster` scheme for your platform of choice.
+5. On first launch the app asks for your Jellyfin server address, then shows the login screen.
+
+All build-time configuration lives in one file: [`Brockbuster/AppConfig.swift`](Brockbuster/AppConfig.swift).
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `defaultServerURL` | `nil` | Pre-configures a Jellyfin server for white-label builds. When `nil`, users are asked for a server on first launch. |
+| `serviceBaseURL` | `nil` | Enables the optional companion-service features (Server Health, Friends, People). When `nil`, those features are hidden. |
+| `bugReportWebhookURL` | `nil` | Enables in-app bug reports to a Discord webhook. When `nil`, the Report-a-Bug UI and shake gesture are disabled. |
 
 ---
 
@@ -47,46 +62,53 @@ While the project will continue to evolve, **this version is considered safe for
 - Resume playback across devices
 - Favorites for Movies and TV Series
 
----
-
-## 📥 Offline Viewing
-
-Offline playback is supported but still evolving.
-
+### Offline Viewing
 - Download media directly to your device
-- Choose between:
-  - **Direct File Downloads**
-  - **Server-side Transcoded Copies** (recommended for compatibility)
+- Choose between **Direct File Downloads** and **Server-side Transcoded Copies**
 - Codec compatibility checks before download
 - Download manager with progress tracking
 - Fully offline playback with cached metadata & artwork
 
----
-
-## ▶️ Custom Player Experience
-
+### Custom Player Experience
 - Fully custom SwiftUI-based player
 - Native Apple playback controls
 - Background audio support
 - Mini **Now Playing** bar while browsing
 - Dynamic Island & system media controls (where supported)
+- AirPlay, DLNA, and Chromecast/Roku casting groundwork
+
+### Accounts
+- Multiple remembered accounts with an account chooser
+- Access tokens stored in the **Keychain**
 
 ---
 
-## 🌐 Brockbuster.lol Exclusive Features
+## 🌐 Companion Service Features (optional)
 
-These features are powered by the Brockbuster service layer and are **not part of Jellyfin itself**.
+The app also contains a set of community features that go beyond what Jellyfin itself offers:
 
-### Server Health Dashboard
-- Real-time server status
-- CPU, GPU, memory, and storage visibility
-- Drive health warnings
+- **Server Health dashboard** — real-time status, CPU/GPU/memory, and per-drive storage warnings
+- **Friends** — friend lists and requests between users of the same server
+- **People directory** — discover public profiles on your server
 
-### Social & Identity
-- Brockbuster membership card
-- Public user profiles (opt-in)
-- Friends system
-- Community discovery (People directory)
+These are powered by a separate web service (not included in this repo) that the client talks to
+using the user's Jellyfin token. **They are disabled by default** — the UI for them only appears
+when you set `AppConfig.serviceBaseURL` to a service you run yourself.
+
+The full API contract the client expects (endpoints, headers, response shapes) is documented in
+[`docs/SERVICE_API.md`](docs/SERVICE_API.md), so you can implement a compatible backend for your
+own community. The Swift models in
+[`Brockbuster/BrockbusterAPI.swift`](Brockbuster/BrockbusterAPI.swift) are the authoritative
+reference.
+
+---
+
+## 🐞 Bug Reporting
+
+The app includes an in-app bug reporter (Settings → Report a Bug, or shake an iPhone) that posts
+to a Discord webhook. It is **disabled by default**: set `AppConfig.bugReportWebhookURL` to enable
+it. Remember that anything compiled into a public build is effectively public — for a distributed
+app, prefer proxying reports through your own server instead of shipping a raw webhook URL.
 
 ---
 
@@ -118,23 +140,8 @@ Built with SwiftUI for a consistent, native experience across all devices.
 
 ---
 
-## ℹ️ Notes
+## 📸 Screens
 
-- Brockbuster is **not affiliated with Blockbuster LLC**
-- Designed for personal and community use with **self-hosted Jellyfin servers**
-- App Store distribution is not planned; TestFlight is used for iOS, iPadOS, and tvOS
-
----
-
-© Brock Sexton
-
-
-## 🐞 Bug Reporting
-Users can report issues via:
-- **More → Settings → Report a Bug**
-- **Shaking their iPhone**, which prompts a bug report flow
-
-## Screens
 ![iPhone Home](./assets/screenshots/v0.1.0-iphone-home.png)
 ![iPhone Series](./assets/screenshots/v0.1.0-iphone-series.png)
 ![iPad Login](./assets/screenshots/v0.1.0-ipad-login.png)
@@ -142,3 +149,15 @@ Users can report issues via:
 ![tvOS Welcome Tour](./assets/screenshots/v0.1.0-tvOS-welcome.png)
 ![tvOS Shows Library](./assets/screenshots/v0.1.0-tvOS-shows.png)
 ![tvOS Server Health](./assets/screenshots/v0.1.0-tvOS-health.png)
+
+---
+
+## 📄 License & Trademarks
+
+- Source code is released under the [MIT License](LICENSE).
+- The Brockbuster name and logo are used for this project only; Brockbuster is **not affiliated
+  with Blockbuster LLC**, and this project is **not affiliated with the Jellyfin project**.
+- Designed for personal and community use with **self-hosted Jellyfin servers**. You are
+  responsible for the content on your own server.
+
+© Brock Sexton

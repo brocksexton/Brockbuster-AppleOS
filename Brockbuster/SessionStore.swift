@@ -60,10 +60,15 @@ final class SessionStore: ObservableObject {
         Double(ticks) / 10_000_000.0
     }
 
-    // The default server URL used when the user has not provided one.  This is
-    // configured for the Brockbuster service, but can be overridden by users via
-    // the server setup screen.
-    static let defaultServerURL: URL = URL(string: "https://vcr.brockbuster.lol")!
+    // The default server URL used when the user has not provided one.  Comes
+    // from AppConfig; when nil the app shows the server-setup screen on first
+    // launch instead of assuming a server.
+    static let defaultServerURL: URL? = AppConfig.defaultServerURL
+
+    /// Internal placeholder used while no server has been configured.  Uses the
+    /// reserved .invalid TLD so it can never resolve to a real host.  It is
+    /// never persisted and never shown to the user.
+    static let unconfiguredServerURL: URL = URL(string: "https://unconfigured.invalid")!
     // Keys for persisting server and token in UserDefaults
     private struct Keys {
         static let serverURL = "SessionStore.serverURL"
@@ -78,9 +83,19 @@ final class SessionStore: ObservableObject {
         didSet {
             // Persist the new server URL when it changes.  The network client
             // should be updated explicitly in validateServer or resetServer.
-            UserDefaults.standard.set(serverURL.absoluteString, forKey: Keys.serverURL)
+            // The unconfigured placeholder is never persisted.
+            if serverURL == Self.unconfiguredServerURL {
+                UserDefaults.standard.removeObject(forKey: Keys.serverURL)
+            } else {
+                UserDefaults.standard.set(serverURL.absoluteString, forKey: Keys.serverURL)
+            }
         }
     }
+
+    /// Whether a real server address is known (saved by the user or provided by
+    /// AppConfig).  While false, the app shows the server-setup screen and
+    /// skips connectivity probes.
+    @Published var hasConfiguredServer: Bool
     /// The currently authenticated user.  If nil then the login screen is shown.
     @Published var currentUser: JellyfinUser? {
         didSet {
@@ -129,13 +144,22 @@ final class SessionStore: ObservableObject {
         // Determine the initial server URL without referencing `self` to avoid
         // accessing properties before all stored properties are initialised.
         let initialURL: URL
-        if let savedString = UserDefaults.standard.string(forKey: Keys.serverURL), let url = URL(string: savedString) {
+        let configured: Bool
+        if let savedString = UserDefaults.standard.string(forKey: Keys.serverURL),
+           let url = URL(string: savedString),
+           url != Self.unconfiguredServerURL {
             initialURL = url
+            configured = true
+        } else if let defaultURL = Self.defaultServerURL {
+            initialURL = defaultURL
+            configured = true
         } else {
-            initialURL = Self.defaultServerURL
+            initialURL = Self.unconfiguredServerURL
+            configured = false
         }
         // Assign stored properties using the computed initialURL and loaded user
         self.serverURL = initialURL
+        self.hasConfiguredServer = configured
         if let data = UserDefaults.standard.data(forKey: Keys.userData), let user = try? JSONDecoder().decode(JellyfinUser.self, from: data) {
             self.currentUser = user
         } else {
@@ -153,9 +177,12 @@ final class SessionStore: ObservableObject {
         self.isFetchingLibraries = false
         self.itemCache = [:]
 
-        // Perform a lightweight connectivity check on startup.
-        Task { [weak self] in
-            await self?.refreshConnectionStatus()
+        // Perform a lightweight connectivity check on startup (only once a
+        // server is actually configured).
+        if configured {
+            Task { [weak self] in
+                await self?.refreshConnectionStatus()
+            }
         }
     }
 
@@ -163,6 +190,8 @@ final class SessionStore: ObservableObject {
     ///
     /// This should be called on app launch and when returning to foreground.
     func refreshConnectionStatus(userInitiated: Bool = false) async {
+        // Nothing to probe until the user has picked a server.
+        guard hasConfiguredServer else { return }
         // Avoid spamming the server if views call this frequently.
         // A simple debounce is sufficient for our use case.
         // (We keep it minimal to avoid introducing a full connectivity subsystem.)
@@ -220,6 +249,7 @@ final class SessionStore: ObservableObject {
         }
         // If we reach here the health check succeeded
         serverURL = url
+        hasConfiguredServer = true
         // Update network client now that the server URL has changed
         client = JellyfinClient(baseURL: url)
         offlineModeEnabled = false
@@ -258,6 +288,7 @@ final class SessionStore: ObservableObject {
     /// This is used for "remembered accounts" flows.
     func restoreSession(serverURL: URL, user: JellyfinUser, accessToken: String, memberSince: Date?) {
         self.serverURL = serverURL
+        self.hasConfiguredServer = true
         self.client = JellyfinClient(baseURL: serverURL)
         self.client.setToken(accessToken)
         self.currentUser = user
@@ -278,7 +309,8 @@ final class SessionStore: ObservableObject {
         UserDefaults.standard.removeObject(forKey: Keys.userData)
         accessToken = nil
         currentUser = nil
-        serverURL = Self.defaultServerURL
+        serverURL = Self.defaultServerURL ?? Self.unconfiguredServerURL
+        hasConfiguredServer = Self.defaultServerURL != nil
         client = JellyfinClient(baseURL: serverURL)
         connectionState = .unknown
         lastConnectionError = nil

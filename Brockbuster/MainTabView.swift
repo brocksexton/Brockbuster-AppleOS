@@ -30,12 +30,16 @@ struct MainTabView: View {
                         Text("My")
                     }
 
-                    NavigationStack {
-                        ServerHealthTab()
-                    }
-                    .tabItem {
-                        Image(systemName: "waveform.path.ecg")
-                        Text("Health")
+                    // Server Health is powered by the optional companion
+                    // service layer; the tab only exists when one is configured.
+                    if AppConfig.serviceFeaturesEnabled {
+                        NavigationStack {
+                            ServerHealthTab()
+                        }
+                        .tabItem {
+                            Image(systemName: "waveform.path.ecg")
+                            Text("Health")
+                        }
                     }
 
                     NavigationStack {

@@ -68,8 +68,9 @@ struct ServerSetupView: View {
                     }
                 }
 
-                // Optionally a reset button to revert to default server
-                if session.serverURL != SessionStore.defaultServerURL {
+                // Optionally a reset button to revert to the bundled default
+                // server (only offered when this build ships one).
+                if let defaultURL = SessionStore.defaultServerURL, session.serverURL != defaultURL {
                     Button(action: resetToDefault) {
                         Text("Use Default Server")
                     }
@@ -86,8 +87,9 @@ struct ServerSetupView: View {
             }
         }
         .onAppear {
-            // Pre-fill the text field with the current server string
-            urlString = session.serverURL.absoluteString
+            // Pre-fill the text field with the current server string, unless no
+            // server has been configured yet (fresh install) — then start empty.
+            urlString = session.hasConfiguredServer ? session.serverURL.absoluteString : ""
         }
     }
 
@@ -106,9 +108,10 @@ struct ServerSetupView: View {
         }
     }
 
-    /// Reset the server to the default address.
+    /// Reset the server to the bundled default address, when one exists.
     private func resetToDefault() {
-        urlString = SessionStore.defaultServerURL.absoluteString
+        guard let defaultURL = SessionStore.defaultServerURL else { return }
+        urlString = defaultURL.absoluteString
         submit()
     }
 }

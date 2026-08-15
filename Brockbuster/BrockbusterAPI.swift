@@ -7,13 +7,19 @@
 
 import Foundation
 
-/// Client for Brockbuster website API (brockbuster.lol).
+/// Client for the optional companion "service layer" API that powers the
+/// community features (Server Health, Friends, People).
 /// Auth: Jellyfin token + userId, validated server-side via Jellyfin.
+///
+/// The expected endpoints and response shapes are documented in
+/// docs/SERVICE_API.md so you can implement your own backend.
 final class BrockbusterAPI {
     static let shared = BrockbusterAPI()
 
-    /// Website base URL (NOT Jellyfin). This is the domain hosting /api/* endpoints.
-    private let baseURL = URL(string: "https://brockbuster.lol")!
+    /// Service base URL (NOT Jellyfin). This is the host serving the /api/*
+    /// endpoints, configured via AppConfig.serviceBaseURL. When nil the
+    /// service layer is disabled and every call throws `.serviceDisabled`.
+    private var baseURL: URL? { AppConfig.serviceBaseURL }
 
     private init() {}
 
@@ -275,6 +281,7 @@ final class BrockbusterAPI {
     // MARK: - Errors
 
     enum APIError: LocalizedError {
+        case serviceDisabled
         case notAuthenticated
         case invalidResponse
         case httpStatus(Int, String?)
@@ -282,6 +289,8 @@ final class BrockbusterAPI {
 
         var errorDescription: String? {
             switch self {
+            case .serviceDisabled:
+                return "This build has no companion service configured."
             case .notAuthenticated:
                 return "You must be logged in to use this feature."
             case .invalidResponse:
@@ -304,6 +313,7 @@ final class BrockbusterAPI {
                              queryItems: [URLQueryItem] = [],
                              jellyfinToken: String,
                              jellyfinUserId: String) throws -> URLRequest {
+        guard let baseURL else { throw APIError.serviceDisabled }
         var comps = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
         if !queryItems.isEmpty { comps?.queryItems = queryItems }
         guard let url = comps?.url else { throw APIError.invalidResponse }

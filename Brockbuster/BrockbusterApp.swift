@@ -44,13 +44,17 @@ struct BrockbusterApp: App {
     private func contentView() -> some View {
         if !session.isLoggedIn {
             // If there are remembered accounts, let the user choose one to continue,
-            // or add another account.
+            // or add another account.  Remembered accounts carry their own server URL.
             if accountManager.hasRememberedAccounts {
                 if showAccountChooserOnLaunch {
                     AccountChooserView()
                 } else {
                     AutoSignInView()
                 }
+            } else if !session.hasConfiguredServer {
+                // No server known yet (fresh install without a bundled default):
+                // ask for the Jellyfin server address before showing login.
+                ServerSetupView()
             } else {
                 // No remembered accounts: show the standard login.
                 LoginView()
@@ -115,10 +119,15 @@ private struct BugReportShakePresenter: ViewModifier {
 
 extension View {
     /// Enables the iPhone-only shake gesture to trigger a "Report a Bug" prompt.
+    /// Inert unless a bug-report webhook is configured in AppConfig.
     @ViewBuilder
     func bbEnableBugReportShake(session: SessionStore) -> some View {
         #if canImport(UIKit) && !os(tvOS)
-        self.modifier(BugReportShakePresenter(session: session))
+        if AppConfig.bugReportingEnabled {
+            self.modifier(BugReportShakePresenter(session: session))
+        } else {
+            self
+        }
         #else
         self
         #endif

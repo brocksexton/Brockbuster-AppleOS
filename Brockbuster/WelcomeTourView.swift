@@ -33,11 +33,19 @@ struct WelcomeTourView: View {
             subtitle: "A mini-player keeps your session accessible — and the fullscreen player supports a more modern experience.",
             systemImage: "play.rectangle.fill"
         ),
-        Page(
-            title: "Health & More",
-            subtitle: "Check server health, manage accounts, and find settings without cluttering your main navigation.",
-            systemImage: "waveform.path.ecg"
-        )
+        // The final page only mentions the Health tab when the optional
+        // companion service layer is configured for this build.
+        AppConfig.serviceFeaturesEnabled
+            ? Page(
+                title: "Health & More",
+                subtitle: "Check server health, manage accounts, and find settings without cluttering your main navigation.",
+                systemImage: "waveform.path.ecg"
+            )
+            : Page(
+                title: "More",
+                subtitle: "Manage accounts and find settings without cluttering your main navigation.",
+                systemImage: "ellipsis.circle"
+            )
     ]
 
     let onDone: () -> Void

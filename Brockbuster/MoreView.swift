@@ -41,23 +41,27 @@ struct MoreView: View {
                 }
             }
 
-            Section("Community") {
-                NavigationLink(destination: FriendsView()) {
-                    Label("Friends", systemImage: "person.2.fill")
+            // Community + Server Health need the optional companion service
+            // layer (AppConfig.serviceBaseURL); hidden in plain-Jellyfin builds.
+            if AppConfig.serviceFeaturesEnabled {
+                Section("Community") {
+                    NavigationLink(destination: FriendsView()) {
+                        Label("Friends", systemImage: "person.2.fill")
+                    }
+
+                    NavigationLink(destination: SocialTab()) {
+                        Label("Social Feed", systemImage: "quote.bubble.fill")
+                    }
+
+                    NavigationLink(destination: PeopleView()) {
+                        Label("People", systemImage: "person.crop.square")
+                    }
                 }
 
-                NavigationLink(destination: SocialTab()) {
-                    Label("Social Feed", systemImage: "quote.bubble.fill")
-                }
-
-                NavigationLink(destination: PeopleView()) {
-                    Label("People", systemImage: "person.crop.square")
-                }
-            }
-
-            Section("System") {
-                NavigationLink(destination: ServerHealthTab()) {
-                    Label("Server Health", systemImage: "waveform.path.ecg")
+                Section("System") {
+                    NavigationLink(destination: ServerHealthTab()) {
+                        Label("Server Health", systemImage: "waveform.path.ecg")
+                    }
                 }
             }
 
@@ -113,21 +117,25 @@ struct MoreView: View {
                         }
                     }
 
-                    MoreSectionCard(title: "Community") {
-                        MoreRowLink(title: "Friends", systemImage: "person.2.fill") {
-                            FriendsView()
+                    // Community + Server Health need the optional companion
+                    // service layer; hidden in plain-Jellyfin builds.
+                    if AppConfig.serviceFeaturesEnabled {
+                        MoreSectionCard(title: "Community") {
+                            MoreRowLink(title: "Friends", systemImage: "person.2.fill") {
+                                FriendsView()
+                            }
+                            MoreRowLink(title: "Social Feed", systemImage: "quote.bubble.fill") {
+                                SocialTab()
+                            }
+                            MoreRowLink(title: "People", systemImage: "person.crop.square") {
+                                PeopleView()
+                            }
                         }
-                        MoreRowLink(title: "Social Feed", systemImage: "quote.bubble.fill") {
-                            SocialTab()
-                        }
-                        MoreRowLink(title: "People", systemImage: "person.crop.square") {
-                            PeopleView()
-                        }
-                    }
 
-                    MoreSectionCard(title: "System") {
-                        MoreRowLink(title: "Server Health", systemImage: "waveform.path.ecg") {
-                            ServerHealthTab()
+                        MoreSectionCard(title: "System") {
+                            MoreRowLink(title: "Server Health", systemImage: "waveform.path.ecg") {
+                                ServerHealthTab()
+                            }
                         }
                     }
 
@@ -458,10 +466,11 @@ private final class BugReportService {
     static let shared = BugReportService()
     private init() {}
 
-    /// Discord webhook for bug reports.
+    /// Discord webhook for bug reports, supplied via AppConfig.
     ///
-    /// If you ever need to rotate this, change the URL string and ship an update.
-    private let webhookURLString = "https://discord.com/api/webhooks/1456861309084893408/akz7vo4PN-LDW3CLDwYXwcNsN87Iunx12XtVe3IgOcktgns-PjPlIqaIdL-kwulgjvta"
+    /// When unset, the Report-a-Bug UI is hidden and this service refuses to
+    /// send. Anything compiled into a public build is public — prefer proxying
+    /// reports through your own server over shipping a raw webhook URL.
 
     struct DiscordPayload: Codable {
         let username: String?
@@ -476,7 +485,7 @@ private final class BugReportService {
     }
 
     func send(subject: String, details: String, diagnostics: BugReportDiagnostics?) async throws {
-        guard let url = URL(string: webhookURLString) else {
+        guard let url = AppConfig.bugReportWebhookURL else {
             throw URLError(.badURL)
         }
 
@@ -638,11 +647,13 @@ struct SettingsTab: View {
                     .foregroundColor(.secondary)
             }
 
-            Section(header: Text("Support")) {
-                Button {
-                    presentBugReport = true
-                } label: {
-                    Label("Report a Bug", systemImage: "ladybug")
+            if AppConfig.bugReportingEnabled {
+                Section(header: Text("Support")) {
+                    Button {
+                        presentBugReport = true
+                    } label: {
+                        Label("Report a Bug", systemImage: "ladybug")
+                    }
                 }
             }
         }
@@ -730,14 +741,16 @@ struct SettingsTab: View {
                             .padding(.horizontal, 6)
                     }
 
-                    MoreSectionCard(title: "Support") {
-                        Button {
-                            presentBugReport = true
-                        } label: {
-                            MoreRow(title: "Report a Bug", systemImage: "ladybug")
+                    if AppConfig.bugReportingEnabled {
+                        MoreSectionCard(title: "Support") {
+                            Button {
+                                presentBugReport = true
+                            } label: {
+                                MoreRow(title: "Report a Bug", systemImage: "ladybug")
+                            }
+                            .buttonStyle(.plain)
+                            .bbTVFocusCard(cornerRadius: 18)
                         }
-                        .buttonStyle(.plain)
-                        .bbTVFocusCard(cornerRadius: 18)
                     }
 
                     Spacer(minLength: 28)
